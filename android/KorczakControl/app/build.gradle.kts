@@ -14,7 +14,8 @@ android {
         targetSdk = 35
         versionCode = (project.findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 1
         versionName = (project.findProperty("VERSION_NAME") as String?) ?: "0.3.0"
-        buildConfigField("String", "CONTROL_API_URL", "\"\"")
+        val apiUrl = (project.findProperty("CONTROL_API_URL") as String?) ?: ""
+        buildConfigField("String", "CONTROL_API_URL", "\"${apiUrl.trim().trimEnd('/')}\"")
     }
 
     val releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
@@ -40,15 +41,8 @@ android {
         }
     }
 
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
+    buildFeatures { compose = true; buildConfig = true }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 }
 
 kotlin { jvmToolchain(17) }
