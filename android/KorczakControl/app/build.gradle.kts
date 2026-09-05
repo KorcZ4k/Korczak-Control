@@ -12,9 +12,10 @@ android {
         applicationId = "com.korczak.control"
         minSdk = 26
         targetSdk = 35
-        versionCode = (project.findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 1
-        versionName = (project.findProperty("VERSION_NAME") as String?) ?: "0.3.0"
-        val apiUrl = (project.findProperty("CONTROL_API_URL") as String?) ?: ""
+        versionCode = (project.findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 2
+        versionName = (project.findProperty("VERSION_NAME") as String?) ?: "0.3.1"
+        val apiUrl = (project.findProperty("CONTROL_API_URL") as String?)
+            ?: "https://korczak-control.onrender.com"
         buildConfigField("String", "CONTROL_API_URL", "\"${apiUrl.trim().trimEnd('/')}\"")
     }
 
