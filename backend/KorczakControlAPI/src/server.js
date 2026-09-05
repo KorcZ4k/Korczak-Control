@@ -6,27 +6,60 @@ const cors = require('cors');
 const { loadConfig } = require('./config');
 const { connectDatabase } = require('./db');
 const { authRoutes } = require('./routes/auth');
+const { dashboardRoutes } = require('./routes/dashboard');
+const { resourcesRoutes } = require('./routes/resources');
 
 const config = loadConfig();
 const app = express();
 const startedAt = Date.now();
+
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '256kb' }));
-app.use((req,res,next)=>{ req.requestId=crypto.randomUUID(); res.setHeader('X-Request-Id',req.requestId); next(); });
-const allowedOrigins=config.corsOrigin.split(',').map(v=>v.trim()).filter(Boolean);
-app.use(cors({ origin(origin,cb){ if(!origin||allowedOrigins.length===0||allowedOrigins.includes(origin)) return cb(null,true); return cb(new Error('Origin not allowed by CORS.')); }, methods:['GET','POST'], allowedHeaders:['Content-Type','Authorization'] }));
-app.get('/',(req,res)=>res.json({service:'Korczak Control API',status:'online',version:config.version}));
-app.get('/health',(req,res)=>res.json({status:'ok',service:config.serviceName,version:config.version,environment:config.environment,database: config.mongoUri ? 'configured' : 'not-configured',uptimeSeconds:Math.floor((Date.now()-startedAt)/1000),timestamp:new Date().toISOString()}));
+app.use((req, res, next) => {
+  req.requestId = crypto.randomUUID();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
+
+const allowedOrigins = config.corsOrigin.split(',').map((v) => v.trim()).filter(Boolean);
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('Origin not allowed by CORS.'));
+  },
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
+app.get('/health', (req, res) => res.json({
+  status: 'ok', service: config.serviceName, version: config.version, environment: config.environment,
+  database: config.mongoUri ? 'configured' : 'not-configured',
+  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString()
+}));
+
 app.use('/api/auth', authRoutes(config));
-app.use((req,res)=>res.status(404).json({error:'Route not found.',requestId:req.requestId}));
-app.use((error,req,res,next)=>{ console.error({requestId:req.requestId,error:error.message}); const status=error.name==='MongoServerError'&&error.code===11000?409:500; res.status(status).json({error:status===409?'Resource already exists.':'Internal server error.',requestId:req.requestId}); });
+app.use('/api/dashboard', dashboardRoutes(config));
+app.use('/api/resources', resourcesRoutes(config));
+
+app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestId: req.requestId }));
+app.use((error, req, res, next) => {
+  console.error({ requestId: req.requestId, error: error.message });
+  const status = error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500;
+  res.status(status).json({ error: status === 409 ? 'Resource already exists.' : 'Internal server error.', requestId: req.requestId });
+});
 
 let server;
-async function start(){
-  if(config.mongoUri) await connectDatabase(config.mongoUri);
-  server=app.listen(config.port,()=>console.log(`Korczak Control API running on port ${config.port}`));
+async function start() {
+  if (config.mongoUri) await connectDatabase(config.mongoUri);
+  server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`));
 }
-function shutdown(signal){ console.log(`${signal} received. Closing server.`); if(!server) return process.exit(0); server.close(error=>process.exit(error?1:0)); }
-process.on('SIGTERM',()=>shutdown('SIGTERM')); process.on('SIGINT',()=>shutdown('SIGINT'));
-start().catch(error=>{ console.error('Failed to start API:',error); process.exit(1); });
+function shutdown(signal) {
+  console.log(`${signal} received. Closing server.`);
+  if (!server) return process.exit(0);
+  server.close((error) => process.exit(error ? 1 : 0));
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
