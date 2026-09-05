@@ -23,6 +23,7 @@ jobs:
     env:
       VERSION_CODE: ${{ github.run_number }}
       VERSION_NAME: 0.3.${{ github.run_number }}
+      CONTROL_API_URL: ${{ vars.CONTROL_API_URL }}
 
     steps:
       - name: Checkout repository
@@ -43,8 +44,7 @@ jobs:
       - name: Restore release keystore
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         working-directory: .
-        run: |
-          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > android/KorczakControl/app/korczak-release.jks
+        run: echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > android/KorczakControl/app/korczak-release.jks
 
       - name: Build signed release APK
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
@@ -53,11 +53,11 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME --stacktrace
+        run: gradle :app:assembleRelease -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME -PCONTROL_API_URL="$CONTROL_API_URL" --stacktrace
 
       - name: Build debug APK fallback
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 == '' }}
-        run: gradle :app:assembleDebug -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME --stacktrace
+        run: gradle :app:assembleDebug -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME -PCONTROL_API_URL="$CONTROL_API_URL" --stacktrace
 
       - name: Upload signed release artifact
         if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
