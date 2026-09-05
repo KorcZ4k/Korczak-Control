@@ -6,6 +6,7 @@ const cors = require('cors');
 const { loadConfig } = require('./config');
 const { connectDatabase } = require('./db');
 const { authRoutes } = require('./routes/auth');
+const { accountsRoutes } = require('./routes/accounts');
 const { dashboardRoutes } = require('./routes/dashboard');
 const { resourcesRoutes } = require('./routes/resources');
 const { sitesRoutes } = require('./routes/sites');
@@ -21,11 +22,7 @@ const startedAt = Date.now();
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '256kb' }));
-app.use((req, res, next) => {
-  req.requestId = crypto.randomUUID();
-  res.setHeader('X-Request-Id', req.requestId);
-  next();
-});
+app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.setHeader('X-Request-Id', req.requestId); next(); });
 
 const allowedOrigins = config.corsOrigin.split(',').map((v) => v.trim()).filter(Boolean);
 app.use(cors({
@@ -39,21 +36,14 @@ app.use(cors({
 
 app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
 app.get('/health', (req, res) => res.json({
-  status: 'ok',
-  service: config.serviceName,
-  version: config.version,
-  environment: config.environment,
-  databases: {
-    Admin: Boolean(config.adminDbUri),
-    MoonTensura: Boolean(config.tensuraDbUri),
-    KorczakTechSite: Boolean(config.kzSiteDbUri)
-  },
+  status: 'ok', service: config.serviceName, version: config.version, environment: config.environment,
+  databases: { Admin: Boolean(config.adminDbUri), MoonTensura: Boolean(config.tensuraDbUri), KorczakTechSite: Boolean(config.kzSiteDbUri) },
   integrations: { github: Boolean(config.githubToken), render: Boolean(config.renderApiKey) },
-  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
-  timestamp: new Date().toISOString()
+  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString()
 }));
 
 app.use('/api/auth', authRoutes(config));
+app.use('/api/accounts', accountsRoutes(config));
 app.use('/api/dashboard', dashboardRoutes(config));
 app.use('/api/resources', resourcesRoutes(config));
 app.use('/api/sites', sitesRoutes(config));
@@ -67,10 +57,7 @@ app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestI
 app.use((error, req, res, next) => {
   console.error({ requestId: req.requestId, error: error.message });
   const status = error.statusCode || (error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500);
-  res.status(status).json({
-    error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message,
-    requestId: req.requestId
-  });
+  res.status(status).json({ error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message, requestId: req.requestId });
 });
 
 let server;
@@ -85,7 +72,4 @@ function shutdown(signal) {
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-start().catch((error) => {
-  console.error('Failed to start API:', error);
-  process.exit(1);
-});
+start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
