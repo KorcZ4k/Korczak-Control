@@ -39,7 +39,10 @@ const userSchema = new mongoose.Schema({
   resourcePermissions: { type: [resourcePermissionsSchema], default: [] },
   active: { type: Boolean, default: true },
   lastLoginAt: { type: Date, default: null }
-}, { timestamps: true, collection: 'accounts' });
+}, {
+  timestamps: true,
+  collection: process.env.ADMIN_COLLECTION_NAME || 'Admin'
+});
 
 userSchema.pre('validate', function(next) {
   if (!this.accountId) this.accountId = `KZ-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
