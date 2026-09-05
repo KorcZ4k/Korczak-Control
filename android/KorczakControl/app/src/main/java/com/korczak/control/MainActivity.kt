@@ -3,22 +3,23 @@ package com.korczak.control
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.korczak.control.auth.LoginScreen
+import com.korczak.control.core.SessionManager
 import com.korczak.control.dashboard.DashboardScreen
+import com.korczak.control.modules.ApiDataScreen
+import com.korczak.control.settings.SettingsScreen
 import com.korczak.control.ui.theme.KorczakControlTheme
 
 class MainActivity : ComponentActivity() {
@@ -28,38 +29,49 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class Destination(val route: String, val label: String)
+private data class Destination(val route: String, val label: String, val path: String? = null)
 private val destinations = listOf(
-    Destination("dashboard", "Início"), Destination("sites", "Sites"),
-    Destination("apis", "APIs"), Destination("apps", "Apps"),
-    Destination("databases", "Dados"), Destination("infrastructure", "Infra"),
-    Destination("notifications", "Alertas"), Destination("settings", "Ajustes")
+    Destination("dashboard", "Início"),
+    Destination("sites", "Sites", "/api/sites"),
+    Destination("apis", "APIs", "/api/managed/api"),
+    Destination("apps", "Apps", "/api/managed/app"),
+    Destination("databases", "Dados", "/api/databases/stats"),
+    Destination("github", "GitHub", "/api/github/status"),
+    Destination("render", "Render", "/api/render/status"),
+    Destination("notifications", "Alertas", "/api/events/unread"),
+    Destination("settings", "Ajustes")
 )
 
 @Composable
 fun ControlApp() {
+    val context = LocalContext.current
+    val session = remember { SessionManager(context) }
+    var authenticated by remember { mutableStateOf(session.isAuthenticated()) }
+    if (!authenticated) {
+        LoginScreen { authenticated = true }
+        return
+    }
+
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: "dashboard"
     Scaffold(bottomBar = {
-        NavigationBar {
+        NavigationBar(modifier = Modifier.horizontalScroll(rememberScrollState())) {
             destinations.forEach { item ->
                 NavigationBarItem(
                     selected = current == item.route,
-                    onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true; popUpTo(navController.graph.startDestinationId) { saveState = true } } },
+                    onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
                     icon = { Text("•") }, label = { Text(item.label) }
                 )
             }
         }
     }) { padding ->
-        NavHost(navController, "dashboard", Modifier.padding(padding)) {
+        NavHost(navController, "dashboard", Modifier.fillMaxSize().padding(padding)) {
             composable("dashboard") { DashboardScreen() }
-            destinations.filter { it.route != "dashboard" }.forEach { item -> composable(item.route) { PlaceholderScreen(item.label) } }
+            destinations.filter { it.route != "dashboard" && it.route != "settings" }.forEach { item ->
+                composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) }
+            }
+            composable("settings") { SettingsScreen { authenticated = false } }
         }
     }
-}
-
-@Composable
-fun PlaceholderScreen(title: String) {
-    Box(Modifier.fillMaxSize().padding(24.dp)) { Text(title) }
 }
