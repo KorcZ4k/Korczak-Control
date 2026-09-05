@@ -40,14 +40,8 @@ private fun RootApp() {
     val context = LocalContext.current
     val session = remember { SessionManager(context) }
     var authenticated by remember { mutableStateOf(session.isAuthenticated()) }
-    if (session.isApiConfigured() && !authenticated) {
-        LoginScreen { authenticated = true }
-    } else {
-        ControlApp(onLogout = {
-            session.clear()
-            authenticated = false
-        })
-    }
+    if (session.isApiConfigured() && !authenticated) LoginScreen { authenticated = true }
+    else ControlApp(onLogout = { session.clear(); authenticated = false })
 }
 
 private data class Destination(val route: String, val label: String, val path: String? = null)
@@ -106,31 +100,30 @@ fun ControlApp(onLogout: () -> Unit) {
     val currentDestination = destinations.firstOrNull { it.route == current } ?: destinations.first()
     val permissions = session.permissions()
     val securedMode = session.isApiConfigured()
-    val visibleDestinations = remember(current, securedMode, session.token()) {
-        destinations.filter { isAllowed(it, permissions, securedMode) }
-    }
+    val visibleDestinations = destinations.filter { isAllowed(it, permissions, securedMode) }
+    val preferredBottom = listOf("dashboard", "sites", "github", "notifications", "settings")
+        .mapNotNull { route -> visibleDestinations.firstOrNull { it.route == route } }
+    val bottomDestinations = if (preferredBottom.size >= 3) preferredBottom else visibleDestinations.take(5)
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<AppUpdate?>(null) }
 
     LaunchedEffect(Unit) { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) }
 
-    if (update != null) {
-        AlertDialog(
-            onDismissRequest = { update = null },
-            icon = { Icon(Icons.Default.SystemUpdate, null) },
-            title = { Text("Atualização disponível") },
-            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Versão ${update!!.version} está disponível.")
-                Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
-                Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall)
-            } },
-            confirmButton = { TextButton(onClick = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl)))
-                update = null
-            }) { Text("Atualizar") } },
-            dismissButton = { TextButton(onClick = { update = null }) { Text("Agora não") } }
-        )
-    }
+    if (update != null) AlertDialog(
+        onDismissRequest = { update = null },
+        icon = { Icon(Icons.Default.SystemUpdate, null) },
+        title = { Text("Atualização disponível") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Versão ${update!!.version} está disponível.")
+            Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
+            Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall)
+        } },
+        confirmButton = { TextButton(onClick = {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl)))
+            update = null
+        }) { Text("Atualizar") } },
+        dismissButton = { TextButton(onClick = { update = null }) { Text("Agora não") } }
+    )
 
     Scaffold(
         topBar = {
@@ -143,16 +136,14 @@ fun ControlApp(onLogout: () -> Unit) {
                     IconButton(onClick = { scope.launch { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) } }) {
                         Icon(Icons.Default.SystemUpdate, "Verificar atualizações")
                     }
-                    if (securedMode && session.isAuthenticated()) {
-                        IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
-                    }
+                    if (securedMode && session.isAuthenticated()) IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
                     Spacer(Modifier.width(4.dp))
                 }
             )
         },
         bottomBar = {
             NavigationBar {
-                visibleDestinations.take(5).forEach { item ->
+                bottomDestinations.forEach { item ->
                     NavigationBarItem(
                         selected = current == item.route,
                         onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
