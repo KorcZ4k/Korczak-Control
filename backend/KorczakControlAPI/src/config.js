@@ -9,8 +9,8 @@ function loadConfig() {
 
   const tensuraDbName = process.env.TENSURA_DB_NAME || 'MoonTensura';
   const kzSiteDbName = process.env.KZSITE_DB_NAME || 'KorczakTechSite';
-  const adminDbName = process.env.ADMIN_DB_NAME || kzSiteDbName;
-  const adminCollectionName = process.env.ADMIN_COLLECTION_NAME || 'Admin';
+  const adminDbName = process.env.ADMIN_DB_NAME || 'KorczakControl';
+  const adminCollectionName = process.env.ADMIN_COLLECTION_NAME || 'Users';
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.');
   if (jwtSecret.length < 32) throw new Error('JWT_SECRET must contain at least 32 characters.');
