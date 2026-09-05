@@ -1,5 +1,7 @@
 package com.korczak.control
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,6 +11,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -18,6 +21,9 @@ import com.korczak.control.dashboard.DashboardScreen
 import com.korczak.control.modules.ApiDataScreen
 import com.korczak.control.settings.SettingsScreen
 import com.korczak.control.ui.theme.KorczakControlTheme
+import com.korczak.control.update.AppUpdate
+import com.korczak.control.update.AppUpdateRepository
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,6 +68,37 @@ fun ControlApp() {
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: "dashboard"
     val currentDestination = destinations.firstOrNull { it.route == current } ?: destinations.first()
+    val scope = rememberCoroutineScope()
+    var update by remember { mutableStateOf<AppUpdate?>(null) }
+    var updateChecked by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        update = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
+        updateChecked = true
+    }
+
+    if (update != null) {
+        AlertDialog(
+            onDismissRequest = { update = null },
+            icon = { Icon(Icons.Default.SystemUpdate, null) },
+            title = { Text("Atualização disponível") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Versão ${update!!.version} está disponível.")
+                    Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
+                    Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl)))
+                    update = null
+                }) { Text("Atualizar") }
+            },
+            dismissButton = { TextButton(onClick = { update = null }) { Text("Agora não") } }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -73,6 +110,12 @@ fun ControlApp() {
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        scope.launch {
+                            update = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
+                            updateChecked = true
+                        }
+                    }) { Icon(Icons.Default.SystemUpdate, "Verificar atualizações") }
                     AssistChip(
                         onClick = { navController.navigate("dashboard") { launchSingleTop = true } },
                         label = { Text("Centro de controle") },
