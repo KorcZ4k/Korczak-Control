@@ -12,8 +12,8 @@ android {
         applicationId = "com.korczak.control"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = (project.findProperty("VERSION_CODE") as String?)?.toIntOrNull() ?: 1
+        versionName = (project.findProperty("VERSION_NAME") as String?) ?: "0.3.0"
         buildConfigField("String", "CONTROL_API_URL", "\"\"")
     }
 
