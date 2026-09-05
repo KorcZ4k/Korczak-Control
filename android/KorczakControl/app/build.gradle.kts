@@ -1,7 +1,16 @@
 plugins { id("com.android.application"); id("org.jetbrains.kotlin.android"); id("org.jetbrains.kotlin.plugin.compose") }
 
-android { namespace = "com.korczak.control"; compileSdk = 35
-    defaultConfig { applicationId = "com.korczak.control"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0" }
+android {
+    namespace = "com.korczak.control"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "com.korczak.control"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0"
+        buildConfigField("String", "CONTROL_API_URL", "\"\"")
+    }
     buildFeatures { compose = true; buildConfig = true }
 }
 
@@ -13,5 +22,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.8.5")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
