@@ -17,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.korczak.control.auth.AuthRepository
 import com.korczak.control.auth.LoginScreen
 import com.korczak.control.core.SessionManager
 import com.korczak.control.dashboard.DashboardScreen
@@ -39,36 +40,40 @@ class MainActivity : ComponentActivity() {
 private fun RootApp() {
     val context = LocalContext.current
     val session = remember { SessionManager(context) }
+    val authRepository = remember { AuthRepository(session) }
+    val scope = rememberCoroutineScope()
     var authenticated by remember { mutableStateOf(session.isAuthenticated()) }
-    if (session.isApiConfigured() && !authenticated) LoginScreen { authenticated = true }
-    else ControlApp(onLogout = { session.clear(); authenticated = false })
+    var checkingSession by remember { mutableStateOf(session.isAuthenticated()) }
+
+    LaunchedEffect(Unit) {
+        if (authenticated) {
+            authRepository.validateSession().onFailure { authenticated = false }
+        }
+        checkingSession = false
+    }
+
+    when {
+        checkingSession -> Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+        !session.isApiConfigured() || !authenticated -> LoginScreen { authenticated = true }
+        else -> ControlApp(onLogout = { session.clearSession(); authenticated = false })
+    }
 }
 
 private data class Destination(val route: String, val label: String, val path: String? = null)
 private val destinations = listOf(
-    Destination("dashboard", "Painel"),
-    Destination("sites", "Sites", "/api/sites"),
-    Destination("apis", "APIs", "/api/managed/api"),
-    Destination("apps", "Apps", "/api/managed/app"),
-    Destination("databases", "MongoDB", "/api/databases/stats"),
-    Destination("github", "GitHub", "/api/github/status"),
-    Destination("render", "Render", "/api/render/status"),
-    Destination("notifications", "Eventos", "/api/events/unread"),
+    Destination("dashboard", "Painel"), Destination("sites", "Sites", "/api/sites"),
+    Destination("apis", "APIs", "/api/managed/api"), Destination("apps", "Apps", "/api/managed/app"),
+    Destination("databases", "MongoDB", "/api/databases/stats"), Destination("github", "GitHub", "/api/github/status"),
+    Destination("render", "Render", "/api/render/status"), Destination("notifications", "Eventos", "/api/events/unread"),
     Destination("settings", "Ajustes")
 )
 
 @Composable
 private fun DestinationIcon(route: String) {
     val icon = when (route) {
-        "dashboard" -> Icons.Default.Home
-        "sites" -> Icons.Default.Language
-        "apis" -> Icons.Default.Api
-        "apps" -> Icons.Default.Apps
-        "databases" -> Icons.Default.Storage
-        "github" -> Icons.Default.Code
-        "render" -> Icons.Default.Cloud
-        "notifications" -> Icons.Default.Notifications
-        else -> Icons.Default.Settings
+        "dashboard" -> Icons.Default.Home; "sites" -> Icons.Default.Language; "apis" -> Icons.Default.Api
+        "apps" -> Icons.Default.Apps; "databases" -> Icons.Default.Storage; "github" -> Icons.Default.Code
+        "render" -> Icons.Default.Cloud; "notifications" -> Icons.Default.Notifications; else -> Icons.Default.Settings
     }
     Icon(icon, contentDescription = null)
 }
@@ -81,7 +86,7 @@ private fun isAllowed(destination: Destination, permissions: JSONObject, secured
         "apps" -> permissions.optBoolean("applications")
         "databases" -> {
             val mongo = permissions.optJSONObject("mongodb") ?: return false
-            mongo.optBoolean("Admin") || mongo.optBoolean("MoonTensura") || mongo.optBoolean("KorczakTechSite")
+            mongo.optBoolean("KorczakControl") || mongo.optBoolean("MoonTensura") || mongo.optBoolean("KorczakTechSite")
         }
         "github" -> permissions.optBoolean("github")
         "render" -> permissions.optBoolean("render")
@@ -101,8 +106,7 @@ fun ControlApp(onLogout: () -> Unit) {
     val permissions = session.permissions()
     val securedMode = session.isApiConfigured()
     val visibleDestinations = destinations.filter { isAllowed(it, permissions, securedMode) }
-    val preferredBottom = listOf("dashboard", "sites", "github", "notifications", "settings")
-        .mapNotNull { route -> visibleDestinations.firstOrNull { it.route == route } }
+    val preferredBottom = listOf("dashboard", "sites", "github", "notifications", "settings").mapNotNull { route -> visibleDestinations.firstOrNull { it.route == route } }
     val bottomDestinations = if (preferredBottom.size >= 3) preferredBottom else visibleDestinations.take(5)
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<AppUpdate?>(null) }
@@ -110,55 +114,22 @@ fun ControlApp(onLogout: () -> Unit) {
     LaunchedEffect(Unit) { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) }
 
     if (update != null) AlertDialog(
-        onDismissRequest = { update = null },
-        icon = { Icon(Icons.Default.SystemUpdate, null) },
-        title = { Text("Atualização disponível") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Versão ${update!!.version} está disponível.")
-            Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
-            Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall)
-        } },
-        confirmButton = { TextButton(onClick = {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl)))
-            update = null
-        }) { Text("Atualizar") } },
+        onDismissRequest = { update = null }, icon = { Icon(Icons.Default.SystemUpdate, null) }, title = { Text("Atualização disponível") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Versão ${update!!.version} está disponível."); Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall); Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall) } },
+        confirmButton = { TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl))); update = null }) { Text("Atualizar") } },
         dismissButton = { TextButton(onClick = { update = null }) { Text("Agora não") } }
     )
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Column {
-                    Text("KORCZAK CONTROL", style = MaterialTheme.typography.titleLarge)
-                    Text(currentDestination.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } },
-                actions = {
-                    IconButton(onClick = { scope.launch { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) } }) {
-                        Icon(Icons.Default.SystemUpdate, "Verificar atualizações")
-                    }
-                    if (securedMode && session.isAuthenticated()) IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
-                    Spacer(Modifier.width(4.dp))
-                }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                bottomDestinations.forEach { item ->
-                    NavigationBarItem(
-                        selected = current == item.route,
-                        onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
-                        icon = { DestinationIcon(item.route) },
-                        label = { Text(item.label) }
-                    )
-                }
-            }
-        }
+        topBar = { TopAppBar(title = { Column { Text("KORCZAK CONTROL", style = MaterialTheme.typography.titleLarge); Text("${session.accountName()} · ${currentDestination.label}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } }, actions = {
+            IconButton(onClick = { scope.launch { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) } }) { Icon(Icons.Default.SystemUpdate, "Verificar atualizações") }
+            IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
+        }) },
+        bottomBar = { NavigationBar { bottomDestinations.forEach { item -> NavigationBarItem(selected = current == item.route, onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } }, icon = { DestinationIcon(item.route) }, label = { Text(item.label) }) } } }
     ) { padding ->
         NavHost(navController, "dashboard", Modifier.fillMaxSize().padding(padding)) {
             composable("dashboard") { DashboardScreen() }
-            visibleDestinations.filter { it.route != "dashboard" && it.route != "settings" }.forEach { item ->
-                composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) }
-            }
+            visibleDestinations.filter { it.route !in listOf("dashboard", "settings") }.forEach { item -> composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) } }
             composable("settings") { SettingsScreen() }
         }
     }
