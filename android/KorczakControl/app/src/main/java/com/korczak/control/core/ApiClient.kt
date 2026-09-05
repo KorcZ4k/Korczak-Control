@@ -17,7 +17,7 @@ class ApiClient(private val session: SessionManager) {
 
     private suspend fun request(method: String, path: String, body: String? = null): ApiResult = withContext(Dispatchers.IO) {
         val baseUrl = session.apiUrl()
-        if (baseUrl.isBlank()) return@withContext ApiResult.Failure("Configure a URL da Korczak Control API.")
+
         try {
             val connection = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = method
@@ -44,5 +44,7 @@ class ApiClient(private val session: SessionManager) {
 
     private fun extractError(body: String, fallback: String): String = try {
         JSONObject(body).optString("error").ifBlank { fallback }
-    } catch (_: Exception) { fallback }
+    } catch (_: Exception) {
+        fallback
+    }
 }
