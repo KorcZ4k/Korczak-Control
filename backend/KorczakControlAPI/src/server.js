@@ -8,6 +8,7 @@ const { connectDatabase } = require('./db');
 const { authRoutes } = require('./routes/auth');
 const { dashboardRoutes } = require('./routes/dashboard');
 const { resourcesRoutes } = require('./routes/resources');
+const { sitesRoutes } = require('./routes/sites');
 
 const config = loadConfig();
 const app = express();
@@ -28,7 +29,7 @@ app.use(cors({
     if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error('Origin not allowed by CORS.'));
   },
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
@@ -42,6 +43,7 @@ app.get('/health', (req, res) => res.json({
 app.use('/api/auth', authRoutes(config));
 app.use('/api/dashboard', dashboardRoutes(config));
 app.use('/api/resources', resourcesRoutes(config));
+app.use('/api/sites', sitesRoutes(config));
 
 app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestId: req.requestId }));
 app.use((error, req, res, next) => {
