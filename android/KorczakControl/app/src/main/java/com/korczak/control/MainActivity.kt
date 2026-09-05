@@ -17,6 +17,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.korczak.control.auth.LoginScreen
+import com.korczak.control.core.SessionManager
 import com.korczak.control.dashboard.DashboardScreen
 import com.korczak.control.modules.ApiDataScreen
 import com.korczak.control.settings.SettingsScreen
@@ -24,11 +26,27 @@ import com.korczak.control.ui.theme.KorczakControlTheme
 import com.korczak.control.update.AppUpdate
 import com.korczak.control.update.AppUpdateRepository
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { KorczakControlTheme { ControlApp() } }
+        setContent { KorczakControlTheme { RootApp() } }
+    }
+}
+
+@Composable
+private fun RootApp() {
+    val context = LocalContext.current
+    val session = remember { SessionManager(context) }
+    var authenticated by remember { mutableStateOf(session.isAuthenticated()) }
+    if (session.isApiConfigured() && !authenticated) {
+        LoginScreen { authenticated = true }
+    } else {
+        ControlApp(onLogout = {
+            session.clear()
+            authenticated = false
+        })
     }
 }
 
@@ -61,41 +79,55 @@ private fun DestinationIcon(route: String) {
     Icon(icon, contentDescription = null)
 }
 
+private fun isAllowed(destination: Destination, permissions: JSONObject, securedMode: Boolean): Boolean {
+    if (!securedMode || destination.route in listOf("dashboard", "settings", "notifications")) return true
+    return when (destination.route) {
+        "sites" -> permissions.optBoolean("sites")
+        "apis" -> permissions.optBoolean("apis")
+        "apps" -> permissions.optBoolean("applications")
+        "databases" -> {
+            val mongo = permissions.optJSONObject("mongodb") ?: return false
+            mongo.optBoolean("Admin") || mongo.optBoolean("MoonTensura") || mongo.optBoolean("KorczakTechSite")
+        }
+        "github" -> permissions.optBoolean("github")
+        "render" -> permissions.optBoolean("render")
+        else -> true
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ControlApp() {
+fun ControlApp(onLogout: () -> Unit) {
+    val context = LocalContext.current
+    val session = remember { SessionManager(context) }
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: "dashboard"
     val currentDestination = destinations.firstOrNull { it.route == current } ?: destinations.first()
+    val permissions = session.permissions()
+    val securedMode = session.isApiConfigured()
+    val visibleDestinations = remember(current, securedMode, session.token()) {
+        destinations.filter { isAllowed(it, permissions, securedMode) }
+    }
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<AppUpdate?>(null) }
-    var updateChecked by remember { mutableStateOf(false) }
-    val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
-        update = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
-        updateChecked = true
-    }
+    LaunchedEffect(Unit) { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) }
 
     if (update != null) {
         AlertDialog(
             onDismissRequest = { update = null },
             icon = { Icon(Icons.Default.SystemUpdate, null) },
             title = { Text("Atualização disponível") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Versão ${update!!.version} está disponível.")
-                    Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
-                    Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl)))
-                    update = null
-                }) { Text("Atualizar") }
-            },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Versão ${update!!.version} está disponível.")
+                Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
+                Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall)
+            } },
+            confirmButton = { TextButton(onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl)))
+                update = null
+            }) { Text("Atualizar") } },
             dismissButton = { TextButton(onClick = { update = null }) { Text("Agora não") } }
         )
     }
@@ -103,31 +135,24 @@ fun ControlApp() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("KORCZAK CONTROL", style = MaterialTheme.typography.titleLarge)
-                        Text(currentDestination.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
+                title = { Column {
+                    Text("KORCZAK CONTROL", style = MaterialTheme.typography.titleLarge)
+                    Text(currentDestination.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } },
                 actions = {
-                    IconButton(onClick = {
-                        scope.launch {
-                            update = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
-                            updateChecked = true
-                        }
-                    }) { Icon(Icons.Default.SystemUpdate, "Verificar atualizações") }
-                    AssistChip(
-                        onClick = { navController.navigate("dashboard") { launchSingleTop = true } },
-                        label = { Text("Centro de controle") },
-                        leadingIcon = { Icon(Icons.Default.Shield, null, Modifier.size(16.dp)) }
-                    )
-                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { scope.launch { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) } }) {
+                        Icon(Icons.Default.SystemUpdate, "Verificar atualizações")
+                    }
+                    if (securedMode && session.isAuthenticated()) {
+                        IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
+                    }
+                    Spacer(Modifier.width(4.dp))
                 }
             )
         },
         bottomBar = {
             NavigationBar {
-                listOf(destinations[0], destinations[1], destinations[5], destinations[7], destinations[8]).forEach { item ->
+                visibleDestinations.take(5).forEach { item ->
                     NavigationBarItem(
                         selected = current == item.route,
                         onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
@@ -140,7 +165,7 @@ fun ControlApp() {
     ) { padding ->
         NavHost(navController, "dashboard", Modifier.fillMaxSize().padding(padding)) {
             composable("dashboard") { DashboardScreen() }
-            destinations.filter { it.route != "dashboard" && it.route != "settings" }.forEach { item ->
+            visibleDestinations.filter { it.route != "dashboard" && it.route != "settings" }.forEach { item ->
                 composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) }
             }
             composable("settings") { SettingsScreen() }
