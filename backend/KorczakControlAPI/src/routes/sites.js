@@ -10,6 +10,24 @@ function sitesRoutes(config) {
     try { res.json({ items: await Site.find().sort({ name: 1 }).lean() }); } catch (error) { next(error); }
   });
 
+  router.get('/:slug/probe', async (req, res, next) => {
+    try {
+      const item = await Site.findOne({ slug: req.params.slug }).lean();
+      if (!item) return res.status(404).json({ error: 'Site not found.', requestId: req.requestId });
+      const target = new URL(item.url);
+      if (!['http:', 'https:'].includes(target.protocol)) return res.status(400).json({ error: 'Only HTTP(S) site URLs can be probed.', requestId: req.requestId });
+      const startedAt = Date.now();
+      const response = await fetch(target, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { 'User-Agent': 'Korczak-Control-Monitor/1.0' } });
+      const latencyMs = Date.now() - startedAt;
+      const online = response.status >= 200 && response.status < 500;
+      await Site.updateOne({ _id: item._id }, { $set: { status: online ? 'operational' : 'unavailable', lastUpdatedAt: new Date() } });
+      res.json({ item: { name: item.name, slug: item.slug, url: item.url }, online, statusCode: response.status, latencyMs, checkedAt: new Date().toISOString() });
+    } catch (error) {
+      if (error.name === 'TimeoutError') return res.status(504).json({ error: 'Site probe timed out.', requestId: req.requestId });
+      next(error);
+    }
+  });
+
   router.get('/:slug', async (req, res, next) => {
     try {
       const item = await Site.findOne({ slug: req.params.slug }).lean();
@@ -22,6 +40,8 @@ function sitesRoutes(config) {
     try {
       const { name, slug, url, repository, technology, status, notes, knownErrors } = req.body || {};
       if (!name || !slug || !url) return res.status(400).json({ error: 'name, slug and url are required.', requestId: req.requestId });
+      const parsedUrl = new URL(url);
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) return res.status(400).json({ error: 'url must use HTTP or HTTPS.', requestId: req.requestId });
       const item = await Site.create({ name, slug, url, repository, technology, status, notes, knownErrors, lastUpdatedAt: new Date() });
       res.status(201).json({ item });
     } catch (error) { next(error); }
@@ -32,6 +52,7 @@ function sitesRoutes(config) {
       const allowed = ['name', 'url', 'repository', 'technology', 'status', 'notes', 'knownErrors', 'lastDeploymentAt', 'lastUpdatedAt'];
       const update = {};
       for (const key of allowed) if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) update[key] = req.body[key];
+      if (update.url) { const parsedUrl = new URL(update.url); if (!['http:', 'https:'].includes(parsedUrl.protocol)) return res.status(400).json({ error: 'url must use HTTP or HTTPS.', requestId: req.requestId }); }
       update.lastUpdatedAt = new Date();
       const item = await Site.findOneAndUpdate({ slug: req.params.slug }, { $set: update }, { new: true, runValidators: true });
       if (!item) return res.status(404).json({ error: 'Site not found.', requestId: req.requestId });
