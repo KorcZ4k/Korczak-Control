@@ -8,18 +8,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.korczak.control.auth.LoginScreen
-import com.korczak.control.core.ApiClient
-import com.korczak.control.core.ApiResult
-import com.korczak.control.core.SessionManager
 import com.korczak.control.dashboard.DashboardScreen
 import com.korczak.control.modules.ApiDataScreen
 import com.korczak.control.settings.SettingsScreen
@@ -64,31 +58,6 @@ private fun DestinationIcon(route: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ControlApp() {
-    val context = LocalContext.current
-    val session = remember { SessionManager(context) }
-    val client = remember { ApiClient(session) }
-    var authenticated by remember { mutableStateOf(session.isAuthenticated()) }
-    var validating by remember { mutableStateOf(authenticated) }
-
-    LaunchedEffect(authenticated) {
-        if (!authenticated) { validating = false; return@LaunchedEffect }
-        validating = true
-        when (val result = client.get("/api/auth/me")) {
-            is ApiResult.Success -> Unit
-            is ApiResult.Failure -> if (result.code == 401) { session.clear(); authenticated = false }
-        }
-        validating = false
-    }
-
-    if (validating) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        return
-    }
-    if (!authenticated) {
-        LoginScreen { authenticated = true }
-        return
-    }
-
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: "dashboard"
@@ -106,7 +75,7 @@ fun ControlApp() {
                 actions = {
                     AssistChip(
                         onClick = { navController.navigate("dashboard") { launchSingleTop = true } },
-                        label = { Text("Sistema") },
+                        label = { Text("Centro de controle") },
                         leadingIcon = { Icon(Icons.Default.Shield, null, Modifier.size(16.dp)) }
                     )
                     Spacer(Modifier.width(8.dp))
@@ -131,7 +100,7 @@ fun ControlApp() {
             destinations.filter { it.route != "dashboard" && it.route != "settings" }.forEach { item ->
                 composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) }
             }
-            composable("settings") { SettingsScreen { authenticated = false } }
+            composable("settings") { SettingsScreen() }
         }
     }
 }
