@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -40,7 +41,6 @@ fun ControlApp() {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: "dashboard"
-
     Scaffold(bottomBar = {
         NavigationBar {
             destinations.forEach { item ->
@@ -61,7 +61,5 @@ fun ControlApp() {
 
 @Composable
 fun PlaceholderScreen(title: String) {
-    Box(Modifier.fillMaxSize().padding(androidx.compose.ui.unit.dp(24f))) {
-        Text(title)
-    }
+    Box(Modifier.fillMaxSize().padding(24.dp)) { Text(title) }
 }
