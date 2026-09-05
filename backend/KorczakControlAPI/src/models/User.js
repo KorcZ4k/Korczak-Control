@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const crypto = require('crypto');
 
 const databasePermissionsSchema = new mongoose.Schema({
-  Admin: { type: Boolean, default: false },
+  KorczakControl: { type: Boolean, default: false },
   MoonTensura: { type: Boolean, default: false },
   KorczakTechSite: { type: Boolean, default: false }
 }, { _id: false });
@@ -41,7 +41,7 @@ const userSchema = new mongoose.Schema({
   lastLoginAt: { type: Date, default: null }
 }, {
   timestamps: true,
-  collection: process.env.ADMIN_COLLECTION_NAME || 'Admin'
+  collection: process.env.ADMIN_COLLECTION_NAME || 'Users'
 });
 
 userSchema.pre('validate', function(next) {
