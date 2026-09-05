@@ -20,16 +20,16 @@ function sitesRoutes(config) {
 
   router.post('/', requireRole('Owner', 'Administrator', 'Developer'), async (req, res, next) => {
     try {
-      const { name, slug, url, repository, technology, status, notes } = req.body || {};
+      const { name, slug, url, repository, technology, status, notes, knownErrors } = req.body || {};
       if (!name || !slug || !url) return res.status(400).json({ error: 'name, slug and url are required.', requestId: req.requestId });
-      const item = await Site.create({ name, slug, url, repository, technology, status, notes, lastUpdatedAt: new Date() });
+      const item = await Site.create({ name, slug, url, repository, technology, status, notes, knownErrors, lastUpdatedAt: new Date() });
       res.status(201).json({ item });
     } catch (error) { next(error); }
   });
 
   router.patch('/:slug', requireRole('Owner', 'Administrator', 'Developer'), async (req, res, next) => {
     try {
-      const allowed = ['name', 'url', 'repository', 'technology', 'status', 'notes', 'lastDeploymentAt', 'lastUpdatedAt'];
+      const allowed = ['name', 'url', 'repository', 'technology', 'status', 'notes', 'knownErrors', 'lastDeploymentAt', 'lastUpdatedAt'];
       const update = {};
       for (const key of allowed) if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) update[key] = req.body[key];
       update.lastUpdatedAt = new Date();
