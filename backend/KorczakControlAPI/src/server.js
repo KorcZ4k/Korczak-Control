@@ -37,7 +37,11 @@ app.use(cors({
 app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
 app.get('/health', (req, res) => res.json({
   status: 'ok', service: config.serviceName, version: config.version, environment: config.environment,
-  databases: { Admin: Boolean(config.adminDbUri), MoonTensura: Boolean(config.tensuraDbUri), KorczakTechSite: Boolean(config.kzSiteDbUri) },
+  databases: {
+    KorczakControl: Boolean(config.adminDbUri),
+    MoonTensura: Boolean(config.tensuraDbUri),
+    KorczakTechSite: Boolean(config.kzSiteDbUri)
+  },
   integrations: { github: Boolean(config.githubToken), render: Boolean(config.renderApiKey) },
   uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString()
 }));
