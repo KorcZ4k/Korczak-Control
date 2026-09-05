@@ -7,20 +7,22 @@ import org.json.JSONObject
 class SessionManager(context: Context) {
     private val prefs = context.getSharedPreferences("korczak_control", Context.MODE_PRIVATE)
 
-    fun apiUrl(): String {
-        val configured = prefs.getString("control_api_url", "")?.trim().orEmpty()
-        val fallback = BuildConfig.CONTROL_API_URL.trim()
-        return (configured.ifBlank { fallback }).trimEnd('/')
-    }
+    /**
+     * A API é definida pelo aplicativo no BuildConfig.
+     * O usuário não precisa configurar nem alterar uma URL manualmente.
+     */
+    fun apiUrl(): String = BuildConfig.CONTROL_API_URL.trim().trimEnd('/')
 
-    fun setApiUrl(url: String) {
-        val normalized = url.trim().trimEnd('/')
-        prefs.edit().putString("control_api_url", normalized).apply()
-    }
+    /**
+     * Mantido apenas para compatibilidade com chamadas antigas.
+     * A URL manual não é mais salva nem utilizada.
+     */
+    @Deprecated("A URL da API é configurada automaticamente pelo aplicativo")
+    fun setApiUrl(url: String) = Unit
 
-    fun isApiConfigured(): Boolean = apiUrl().isNotBlank()
+    fun isApiConfigured(): Boolean = true
     fun token(): String? = prefs.getString("access_token", null)?.takeIf { it.isNotBlank() }
-    fun isAuthenticated(): Boolean = !token().isNullOrBlank() && isApiConfigured()
+    fun isAuthenticated(): Boolean = !token().isNullOrBlank()
     fun permissions(): JSONObject = JSONObject(prefs.getString("permissions", "{}") ?: "{}")
     fun accountName(): String = prefs.getString("account_name", "") ?: ""
     fun accountRole(): String = prefs.getString("account_role", "") ?: ""
