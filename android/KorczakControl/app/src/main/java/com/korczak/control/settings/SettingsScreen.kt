@@ -1,27 +1,40 @@
 package com.korczak.control.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.korczak.control.core.SessionManager
 
 @Composable
-fun SettingsScreen(onLogout: () -> Unit) {
-    val context = LocalContext.current
-    val session = remember { SessionManager(context) }
-    var apiUrl by remember { mutableStateOf(session.apiUrl()) }
-    var saved by remember { mutableStateOf(false) }
+fun SettingsScreen() {
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Ajustes", style = MaterialTheme.typography.headlineMedium)
-        Text("Conexão e sessão", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(apiUrl, { apiUrl = it; saved = false }, label = { Text("URL da Korczak Control API") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Button(onClick = { session.saveApiUrl(apiUrl); saved = true }) { Text("Salvar URL") }
-        if (saved) Text("URL salva.")
+        Text("Configure apenas os serviços que a Korczak Technologies já utiliza.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        IntegrationItem("GitHub", "Repositórios, código e projetos", Icons.Default.Code)
+        IntegrationItem("Render", "Deploys e serviços hospedados", Icons.Default.Cloud)
+        IntegrationItem("MongoDB", "Bancos e collections", Icons.Default.Storage)
+        IntegrationItem("Sites Korczak", "Monitoramento dos sites e aplicações", Icons.Default.Language)
+
         HorizontalDivider()
-        Text("Sessão", style = MaterialTheme.typography.titleMedium)
-        Button(onClick = { session.clear(); onLogout() }) { Text("Sair da conta") }
+        Text("Segurança", style = MaterialTheme.typography.titleMedium)
+        Text("Tokens e credenciais administrativas não serão inseridos no código do aplicativo. Cada integração deverá usar um método de conexão adequado.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun IntegrationItem(name: String, description: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Icon(icon, null, modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.weight(1f)) {
+                Text(name, style = MaterialTheme.typography.titleMedium)
+                Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Ainda não conectado", style = MaterialTheme.typography.labelMedium)
+            }
+        }
     }
 }
