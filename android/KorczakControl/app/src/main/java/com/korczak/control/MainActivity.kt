@@ -3,11 +3,13 @@ package com.korczak.control
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -33,12 +35,32 @@ class MainActivity : ComponentActivity() {
 
 private data class Destination(val route: String, val label: String, val path: String? = null)
 private val destinations = listOf(
-    Destination("dashboard", "Início"), Destination("sites", "Sites", "/api/sites"),
-    Destination("apis", "APIs", "/api/managed/api"), Destination("apps", "Apps", "/api/managed/app"),
-    Destination("databases", "Dados", "/api/databases/stats"), Destination("github", "GitHub", "/api/github/status"),
-    Destination("render", "Render", "/api/render/status"), Destination("notifications", "Alertas", "/api/events/unread"),
+    Destination("dashboard", "Painel"),
+    Destination("sites", "Sites", "/api/sites"),
+    Destination("apis", "APIs", "/api/managed/api"),
+    Destination("apps", "Apps", "/api/managed/app"),
+    Destination("databases", "MongoDB", "/api/databases/stats"),
+    Destination("github", "GitHub", "/api/github/status"),
+    Destination("render", "Render", "/api/render/status"),
+    Destination("notifications", "Eventos", "/api/events/unread"),
     Destination("settings", "Ajustes")
 )
+
+@Composable
+private fun DestinationIcon(route: String) {
+    val icon = when (route) {
+        "dashboard" -> Icons.Default.Home
+        "sites" -> Icons.Default.Language
+        "apis" -> Icons.Default.Api
+        "apps" -> Icons.Default.Apps
+        "databases" -> Icons.Default.Storage
+        "github" -> Icons.Default.Code
+        "render" -> Icons.Default.Cloud
+        "notifications" -> Icons.Default.Notifications
+        else -> Icons.Default.Settings
+    }
+    Icon(icon, contentDescription = null)
+}
 
 @Composable
 fun ControlApp() {
@@ -59,7 +81,7 @@ fun ControlApp() {
     }
 
     if (validating) {
-        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
     if (!authenticated) {
@@ -70,17 +92,40 @@ fun ControlApp() {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val current = backStack?.destination?.route ?: "dashboard"
-    Scaffold(bottomBar = {
-        NavigationBar(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            destinations.forEach { item ->
-                NavigationBarItem(
-                    selected = current == item.route,
-                    onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
-                    icon = { Text("•") }, label = { Text(item.label) }
-                )
+    val currentDestination = destinations.firstOrNull { it.route == current } ?: destinations.first()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("KORCZAK CONTROL", style = MaterialTheme.typography.titleLarge)
+                        Text(currentDestination.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                actions = {
+                    AssistChip(
+                        onClick = { navController.navigate("dashboard") { launchSingleTop = true } },
+                        label = { Text("Sistema") },
+                        leadingIcon = { Icon(Icons.Default.Shield, null, Modifier.size(16.dp)) }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+            )
+        },
+        bottomBar = {
+            NavigationBar {
+                listOf(destinations[0], destinations[1], destinations[5], destinations[7], destinations[8]).forEach { item ->
+                    NavigationBarItem(
+                        selected = current == item.route,
+                        onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
+                        icon = { DestinationIcon(item.route) },
+                        label = { Text(item.label) }
+                    )
+                }
             }
         }
-    }) { padding ->
+    ) { padding ->
         NavHost(navController, "dashboard", Modifier.fillMaxSize().padding(padding)) {
             composable("dashboard") { DashboardScreen() }
             destinations.filter { it.route != "dashboard" && it.route != "settings" }.forEach { item ->
