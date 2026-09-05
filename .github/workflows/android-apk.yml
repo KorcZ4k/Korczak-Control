@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build and publish Android update
 
 on:
   workflow_dispatch:
@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  build-apk:
-    name: Build Korczak Control APK
+  build-and-publish:
+    name: Build Korczak Control update
     runs-on: ubuntu-latest
 
     defaults:
@@ -23,12 +23,24 @@ jobs:
     env:
       VERSION_CODE: ${{ github.run_number }}
       VERSION_NAME: 0.3.${{ github.run_number }}
-      CONTROL_API_URL: ${{ vars.CONTROL_API_URL }}
-      HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+      CONTROL_API_URL: https://korczak-control.onrender.com
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate release signing
+        working-directory: .
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE" || { echo "ANDROID_KEYSTORE_BASE64 não configurado."; exit 1; }
+          test -n "$ALIAS" || { echo "ANDROID_KEY_ALIAS não configurado."; exit 1; }
+          test -n "$STORE_PASSWORD" || { echo "ANDROID_KEYSTORE_PASSWORD não configurado."; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo "ANDROID_KEY_PASSWORD não configurado."; exit 1; }
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -43,12 +55,10 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Restore release keystore
-        if: ${{ env.HAS_SIGNING == 'true' }}
         working-directory: .
         run: echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > android/KorczakControl/app/korczak-release.jks
 
       - name: Build signed release APK
-        if: ${{ env.HAS_SIGNING == 'true' }}
         env:
           ANDROID_KEYSTORE_FILE: app/korczak-release.jks
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -56,33 +66,23 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle :app:assembleRelease -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME -PCONTROL_API_URL="$CONTROL_API_URL" --stacktrace
 
-      - name: Build debug APK fallback
-        if: ${{ env.HAS_SIGNING != 'true' }}
-        run: gradle :app:assembleDebug -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME -PCONTROL_API_URL="$CONTROL_API_URL" --stacktrace
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/Korczak-Control-${VERSION_NAME}.apk
 
-      - name: Upload signed release artifact
-        if: ${{ env.HAS_SIGNING == 'true' }}
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Korczak-Control-${{ env.VERSION_NAME }}
-          path: android/KorczakControl/app/build/outputs/apk/release/app-release.apk
+          path: android/KorczakControl/app/build/outputs/apk/release/Korczak-Control-${{ env.VERSION_NAME }}.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload debug artifact
-        if: ${{ env.HAS_SIGNING != 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Korczak-Control-debug-${{ env.VERSION_NAME }}
-          path: android/KorczakControl/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Publish GitHub release
-        if: ${{ env.HAS_SIGNING == 'true' && github.event_name == 'push' }}
+        if: ${{ github.event_name == 'push' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION_NAME }}
           name: Korczak Control ${{ env.VERSION_NAME }}
           generate_release_notes: true
-          files: android/KorczakControl/app/build/outputs/apk/release/app-release.apk
+          make_latest: true
+          files: android/KorczakControl/app/build/outputs/apk/release/Korczak-Control-${{ env.VERSION_NAME }}.apk
