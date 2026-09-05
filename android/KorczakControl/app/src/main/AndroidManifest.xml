@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <application android:theme="@style/Theme.KorczakControl" android:label="Korczak Control">
+    <application
+        android:theme="@style/Theme.KorczakControl"
+        android:label="Korczak Control"
+        android:icon="@drawable/kz_app_icon"
+        android:roundIcon="@drawable/kz_app_icon">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
