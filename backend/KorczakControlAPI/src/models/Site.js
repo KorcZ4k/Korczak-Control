@@ -9,6 +9,7 @@ const siteSchema = new mongoose.Schema({
   status: { type: String, enum: ['operational', 'attention', 'unavailable', 'maintenance', 'unknown'], default: 'unknown', index: true },
   lastDeploymentAt: { type: Date, default: null },
   lastUpdatedAt: { type: Date, default: null },
+  knownErrors: { type: [String], default: [] },
   notes: { type: String, trim: true, maxlength: 3000, default: '' }
 }, { timestamps: true, collection: 'control_sites' });
 
