@@ -1,0 +1,25 @@
+{
+  "name": "Korczak Control UI Tokens",
+  "theme": {
+    "mode": "dark",
+    "background": "#090909",
+    "surface": "#111111",
+    "surfaceElevated": "#181818",
+    "border": "#2A2A2A",
+    "textPrimary": "#F5F5F5",
+    "textSecondary": "#A3A3A3",
+    "accent": "#FFFFFF"
+  },
+  "spacing": [4, 8, 12, 16, 24, 32, 48],
+  "radius": {
+    "small": 8,
+    "medium": 14,
+    "large": 20
+  },
+  "status": {
+    "operational": "#38A169",
+    "attention": "#D69E2E",
+    "unavailable": "#E53E3E",
+    "unknown": "#718096"
+  }
+}
