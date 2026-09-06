@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const { ROLE_CODES } = require('../config/organization');
 
 const databasePermissionsSchema = new mongoose.Schema({
   KorczakControl: { type: Boolean, default: false },
@@ -28,13 +29,9 @@ const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, minlength: 2, maxlength: 120 },
   email: { type: String, required: true, unique: true, trim: true, lowercase: true, maxlength: 254 },
   passwordHash: { type: String, required: true, select: false },
-  role: {
-    type: String,
-    enum: ['FOUNDER', 'ADMINISTRATOR', 'DEPARTMENT_MANAGER', 'DEVELOPER', 'STAFF', 'VIEWER'],
-    default: 'VIEWER',
-    index: true
-  },
+  role: { type: String, enum: ROLE_CODES, default: 'VIEWER', index: true },
   department: { type: String, trim: true, default: '' },
+  managerAccountId: { type: String, trim: true, default: '', index: true },
   permissions: { type: permissionsSchema, default: () => ({}) },
   resourcePermissions: { type: [resourcePermissionsSchema], default: [] },
   active: { type: Boolean, default: true },
