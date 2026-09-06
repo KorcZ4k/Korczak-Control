@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getDatabaseConnection } = require('../db');
 
 const managedResourceSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
@@ -15,4 +16,14 @@ const managedResourceSchema = new mongoose.Schema({
 }, { timestamps: true, collection: 'control_resources' });
 managedResourceSchema.index({ kind: 1, slug: 1 }, { unique: true });
 
-module.exports = mongoose.models.ManagedResource || mongoose.model('ManagedResource', managedResourceSchema);
+function getManagedResourceModel() {
+  const connection = getDatabaseConnection('KorczakControl');
+  if (!connection || connection.readyState !== 1) {
+    const error = new Error('KorczakControl database connection is unavailable.');
+    error.statusCode = 503;
+    throw error;
+  }
+  return connection.models.ManagedResource || connection.model('ManagedResource', managedResourceSchema, 'control_resources');
+}
+
+module.exports = getManagedResourceModel;
