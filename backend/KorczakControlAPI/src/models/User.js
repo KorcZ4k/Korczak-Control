@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const { ROLE_CODES } = require('../config/organization');
+const { getDatabaseConnection } = require('../db');
 
 const databasePermissionsSchema = new mongoose.Schema({
   KorczakControl: { type: Boolean, default: false },
@@ -42,8 +43,26 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.pre('validate', function(next) {
-  if (!this.accountId) this.accountId = `KZ-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+  if (!this.accountId) {
+    this.accountId = `KZ-${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+  }
   next();
 });
 
-module.exports = mongoose.model('User', userSchema);
+function getUserModel() {
+  const connection = getDatabaseConnection('KorczakControl');
+
+  if (!connection || connection.readyState !== 1) {
+    const error = new Error('KorczakControl database connection is unavailable.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  return connection.models.User || connection.model(
+    'User',
+    userSchema,
+    process.env.ADMIN_COLLECTION_NAME || 'Users'
+  );
+}
+
+module.exports = getUserModel;
