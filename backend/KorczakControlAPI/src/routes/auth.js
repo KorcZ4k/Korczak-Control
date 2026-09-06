@@ -44,6 +44,14 @@ function validEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function logLoginFailure(req, reason) {
+  console.warn({
+    event: 'auth.login_failed',
+    requestId: req.requestId,
+    reason
+  });
+}
+
 async function migrateLegacyPermissions(user) {
   if (user.permissions?.mongodb?.Admin && !user.permissions.mongodb.KorczakControl) {
     user.permissions.mongodb.KorczakControl = true;
@@ -106,11 +114,13 @@ function authRoutes(config) {
       const normalizedEmail = normalizeEmail(email);
 
       if (typeof password !== 'string' || !validEmail(normalizedEmail) || password.length === 0) {
+        logLoginFailure(req, 'invalid_input');
         return res.status(400).json({ error: 'Informe um e-mail e uma senha válidos.' });
       }
 
       const accountCount = await countUsers();
       if (accountCount === 0) {
+        logLoginFailure(req, 'setup_required');
         return res.status(409).json({ error: 'Nenhuma conta foi configurada ainda. Crie a primeira conta para continuar.', code: 'SETUP_REQUIRED' });
       }
 
@@ -118,17 +128,33 @@ function authRoutes(config) {
         .collation({ locale: 'en', strength: 2 })
         .select('+passwordHash');
 
-      if (!user || !user.active || typeof user.passwordHash !== 'string' || user.passwordHash.length === 0) {
+      if (!user) {
+        logLoginFailure(req, 'user_not_found');
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      }
+
+      if (!user.active) {
+        logLoginFailure(req, 'user_inactive');
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      }
+
+      if (typeof user.passwordHash !== 'string' || user.passwordHash.length === 0) {
+        logLoginFailure(req, 'missing_password_hash');
         return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       }
 
       let passwordMatches = false;
       try {
         passwordMatches = await bcrypt.compare(password, user.passwordHash);
-      } catch {
-        passwordMatches = false;
+      } catch (error) {
+        logLoginFailure(req, 'invalid_password_hash');
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
       }
-      if (!passwordMatches) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+
+      if (!passwordMatches) {
+        logLoginFailure(req, 'password_mismatch');
+        return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+      }
 
       await migrateLegacyPermissions(user);
       user.lastLoginAt = new Date();
