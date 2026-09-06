@@ -34,12 +34,10 @@ jobs:
         working-directory: .
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           test -n "$KEYSTORE" || { echo "ANDROID_KEYSTORE_BASE64 não configurado."; exit 1; }
-          test -n "$ALIAS" || { echo "ANDROID_KEY_ALIAS não configurado."; exit 1; }
           test -n "$STORE_PASSWORD" || { echo "ANDROID_KEYSTORE_PASSWORD não configurado."; exit 1; }
           test -n "$KEY_PASSWORD" || { echo "ANDROID_KEY_PASSWORD não configurado."; exit 1; }
 
@@ -55,16 +53,39 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Restore release keystore
+      - name: Restore and inspect release keystore
         working-directory: .
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
-          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > android/KorczakControl/app/korczak-release.jks
-          test -s android/KorczakControl/app/korczak-release.jks
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/android/KorczakControl/app/korczak-release.jks"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH" || { echo "Falha ao restaurar o keystore."; exit 1; }
+
+          echo "Entradas encontradas no keystore:"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD"
+
+          ALIASES=$(keytool -list -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" 2>/dev/null | awk -F, '/PrivateKeyEntry/{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $1); print $1}')
+          COUNT=$(printf '%s\n' "$ALIASES" | sed '/^$/d' | wc -l | tr -d ' ')
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "Nenhuma chave privada foi encontrada no keystore."
+            exit 1
+          fi
+
+          if [ "$COUNT" -ne 1 ]; then
+            echo "Foram encontradas $COUNT chaves privadas. Configure o keystore para ter uma única chave ou ajuste o workflow manualmente."
+            exit 1
+          fi
+
+          ANDROID_KEY_ALIAS=$(printf '%s\n' "$ALIASES" | head -n 1)
+          echo "Usando automaticamente o alias: $ANDROID_KEY_ALIAS"
+          echo "ANDROID_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
 
       - name: Build signed release APK
         env:
-          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android/KorczakControl/app/korczak-release.jks
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: gradle :app:assembleRelease -PVERSION_CODE=$VERSION_CODE -PVERSION_NAME=$VERSION_NAME -PCONTROL_API_URL="$CONTROL_API_URL" --stacktrace
