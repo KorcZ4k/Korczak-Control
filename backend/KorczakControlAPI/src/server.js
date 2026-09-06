@@ -23,7 +23,11 @@ const startedAt = Date.now();
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '256kb' }));
-app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.setHeader('X-Request-Id', req.requestId); next(); });
+app.use((req, res, next) => {
+  req.requestId = crypto.randomUUID();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
 
 const allowedOrigins = config.corsOrigin.split(',').map((v) => v.trim()).filter(Boolean);
 app.use(cors({
@@ -37,10 +41,13 @@ app.use(cors({
 
 app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
 app.get('/health', (req, res) => res.json({
-  status: 'ok', service: config.serviceName, version: config.version, environment: config.environment,
+  status: 'ok',
+  service: config.serviceName,
+  version: config.version,
+  environment: config.environment,
   databases: {
     KorczakControl: Boolean(config.adminDbUri),
-    MoonTensura: Boolean(config.tensuraDbUri),
+    TensuraMoon: Boolean(config.tensuraDbUri),
     KorczakTechSite: Boolean(config.kzSiteDbUri)
   },
   integrations: {
@@ -49,7 +56,8 @@ app.get('/health', (req, res) => res.json({
     kzSiteApi: Boolean(config.kzSiteApi),
     kzControlApi: Boolean(config.kzControlApi)
   },
-  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString()
+  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
+  timestamp: new Date().toISOString()
 }));
 
 app.use('/api/auth', authRoutes(config));
@@ -66,21 +74,36 @@ app.use('/api/integrations', integrationsRoutes(config));
 
 app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestId: req.requestId }));
 app.use((error, req, res, next) => {
-  console.error({ requestId: req.requestId, error: error.message });
+  console.error({ requestId: req.requestId, error: error.message, stack: error.stack });
   const status = error.statusCode || (error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500);
-  res.status(status).json({ error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message, requestId: req.requestId });
+  res.status(status).json({
+    error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message,
+    requestId: req.requestId
+  });
 });
 
 let server;
 async function start() {
-  if (config.adminDbUri) await connectDatabase(config.adminDbUri, config.adminDbName);
-  server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`));
+  await Promise.all([
+    connectDatabase('KorczakControl', config.adminDbUri, config.adminDbName),
+    connectDatabase('KorczakTechSite', config.kzSiteDbUri, config.kzSiteDbName),
+    connectDatabase('TensuraMoon', config.tensuraDbUri, config.tensuraDbName)
+  ]);
+
+  server = app.listen(config.port, () => {
+    console.log(`Korczak Control API running on port ${config.port}`);
+  });
 }
+
 function shutdown(signal) {
   console.log(`${signal} received. Closing server.`);
   if (!server) return process.exit(0);
   server.close((error) => process.exit(error ? 1 : 0));
 }
+
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
+start().catch((error) => {
+  console.error('Failed to start API:', error);
+  process.exit(1);
+});
