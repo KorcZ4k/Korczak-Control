@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +53,7 @@ private fun RootApp() {
     }
 
     when {
-        checkingSession -> Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+        checkingSession -> Surface(Modifier.fillMaxSize()) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
         !session.isApiConfigured() || !authenticated -> LoginScreen { authenticated = true }
         else -> ControlApp { session.clearSession(); authenticated = false }
     }
@@ -64,21 +65,27 @@ private val destinations = listOf(
     Destination("dashboard", "Painel"), Destination("integrations", "Integrações"),
     Destination("organization", "Equipe"), Destination("github", "GitHub"),
     Destination("render", "Render"), Destination("databases", "MongoDB"),
-    Destination("bots", "Bots"), Destination("apis", "APIs"), Destination("apps", "Apps"),
-    Destination("sites", "Sites"), Destination("clients", "Clientes"), Destination("profile", "Perfil"),
+    Destination("bots", "Bots"), Destination("apis", "APIs"), Destination("apps", "Apps"), Destination("sites", "Sites"), Destination("clients", "Clientes"), Destination("profile", "Perfil"),
     Destination("events", "Eventos"), Destination("settings", "Ajustes")
 )
 
 @Composable
 private fun DestinationIcon(route: String) {
     val icon = when (route) {
-        "dashboard" -> Icons.Default.Home; "integrations" -> Icons.Default.Link
-        "organization" -> Icons.Default.AccountTree; "github" -> Icons.Default.Code
-        "render" -> Icons.Default.Cloud; "databases" -> Icons.Default.Storage
-        "bots" -> Icons.Default.SmartToy; "apis" -> Icons.Default.Api
-        "apps" -> Icons.Default.Apps; "sites" -> Icons.Default.Language
-        "clients" -> Icons.Default.People; "profile" -> Icons.Default.Person
-        "events" -> Icons.Default.Notifications; else -> Icons.Default.Settings
+        "dashboard" -> Icons.Default.Home
+        "integrations" -> Icons.Default.Link
+        "organization" -> Icons.Default.AccountTree
+        "github" -> Icons.Default.Code
+        "render" -> Icons.Default.Cloud
+        "databases" -> Icons.Default.Storage
+        "bots" -> Icons.Default.SmartToy
+        "apis" -> Icons.Default.Api
+        "apps" -> Icons.Default.Apps
+        "sites" -> Icons.Default.Language
+        "clients" -> Icons.Default.People
+        "profile" -> Icons.Default.Person
+        "events" -> Icons.Default.Notifications
+        else -> Icons.Default.Settings
     }
     Icon(icon, contentDescription = null)
 }
@@ -86,11 +93,14 @@ private fun DestinationIcon(route: String) {
 private fun isAllowed(destination: Destination, permissions: JSONObject, securedMode: Boolean): Boolean {
     if (!securedMode || destination.route in listOf("dashboard", "integrations", "organization", "profile", "settings", "events", "clients")) return true
     return when (destination.route) {
-        "sites" -> permissions.optBoolean("sites"); "apis" -> permissions.optBoolean("apis")
+        "sites" -> permissions.optBoolean("sites")
+        "apis" -> permissions.optBoolean("apis")
         "apps" -> permissions.optBoolean("applications")
         "databases" -> permissions.optJSONObject("mongodb")?.let { it.optBoolean("KorczakControl") || it.optBoolean("MoonTensura") || it.optBoolean("KorczakTechSite") } ?: false
-        "github" -> permissions.optBoolean("github"); "render" -> permissions.optBoolean("render")
-        "bots" -> permissions.optBoolean("bots"); else -> true
+        "github" -> permissions.optBoolean("github")
+        "render" -> permissions.optBoolean("render")
+        "bots" -> permissions.optBoolean("bots")
+        else -> true
     }
 }
 
@@ -105,7 +115,6 @@ fun ControlApp(onLogout: () -> Unit) {
     val currentDestination = destinations.firstOrNull { it.route == current } ?: destinations.first()
     val visibleDestinations = destinations.filter { isAllowed(it, session.permissions(), session.isApiConfigured()) }
     val bottomDestinations = listOf("dashboard", "integrations", "organization", "events", "settings").mapNotNull { route -> visibleDestinations.firstOrNull { it.route == route } }
-
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<AppUpdate?>(null) }
     var updateProgress by remember { mutableStateOf<Int?>(null) }
@@ -114,22 +123,20 @@ fun ControlApp(onLogout: () -> Unit) {
     var checkingUpdate by remember { mutableStateOf(false) }
     var showModules by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        update = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
-    }
+    LaunchedEffect(Unit) { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) }
 
     if (update != null) {
         AlertDialog(
             onDismissRequest = { if (updateProgress == null) update = null },
             icon = { Icon(Icons.Default.SystemUpdate, null) },
-            title = { Text(if (updateProgress == null) "Atualização disponível" else "Instalando atualização") },
+            title = { Text(if (updateProgress == null) "Atualização disponível" else "Baixando atualização") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("A versão ${update!!.version} está pronta para instalação.")
-                    if (update!!.notes.isNotBlank()) Text(update!!.notes, style = MaterialTheme.typography.bodySmall)
-                    if (updateProgress != null) {
-                        LinearProgressIndicator(progress = { (updateProgress ?: 0) / 100f }, modifier = Modifier.fillMaxWidth())
-                        Text("${updateProgress ?: 0}% concluído", style = MaterialTheme.typography.bodySmall)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Versão ${update!!.version} disponível para instalação.")
+                    if (update!!.notes.isNotBlank()) Text(update!!.notes, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    updateProgress?.let { progress ->
+                        LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth())
+                        Text("$progress% concluído", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             },
@@ -150,52 +157,65 @@ fun ControlApp(onLogout: () -> Unit) {
     if (updateStatus != null || updateError != null) {
         AlertDialog(
             onDismissRequest = { updateStatus = null; updateError = null },
-            title = { Text(if (updateError != null) "Atualização indisponível" else "Atualização") },
+            title = { Text(if (updateError != null) "Não foi possível atualizar" else "Atualização concluída") },
             text = { Text(updateError ?: updateStatus.orEmpty()) },
             confirmButton = { TextButton(onClick = { updateStatus = null; updateError = null }) { Text("Entendido") } }
         )
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Korczak Control", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(currentDestination.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showModules = true }) { Icon(Icons.Default.Apps, "Abrir módulos") }
-                    IconButton(enabled = !checkingUpdate, onClick = {
-                        checkingUpdate = true
-                        scope.launch {
-                            val found = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
-                            checkingUpdate = false
-                            if (found != null) update = found else updateStatus = "Seu aplicativo já está atualizado ou nenhuma versão publicada foi encontrada."
+            Surface(shadowElevation = 1.dp) {
+                TopAppBar(
+                    title = {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text("KORCZAK CONTROL", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(currentDestination.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                    }) {
-                        if (checkingUpdate) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.Default.SystemUpdate, "Verificar atualizações")
-                    }
-                    IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
-                    DropdownMenu(expanded = showModules, onDismissRequest = { showModules = false }) {
-                        visibleDestinations.filter { destination -> bottomDestinations.none { it.route == destination.route } }.forEach { item ->
-                            DropdownMenuItem(text = { Text(item.label) }, leadingIcon = { DestinationIcon(item.route) }, onClick = {
-                                showModules = false
-                                navController.navigate(item.route) { launchSingleTop = true; restoreState = true }
-                            })
+                    },
+                    actions = {
+                        IconButton(onClick = { showModules = true }) { Icon(Icons.Default.GridView, "Módulos") }
+                        IconButton(enabled = !checkingUpdate, onClick = {
+                            checkingUpdate = true
+                            scope.launch {
+                                val found = AppUpdateRepository.check(BuildConfig.VERSION_NAME)
+                                checkingUpdate = false
+                                if (found != null) update = found else updateStatus = "Você já está utilizando a versão mais recente disponível."
+                            }
+                        }) {
+                            if (checkingUpdate) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Default.SystemUpdate, "Verificar atualizações")
+                        }
+                        IconButton(onClick = onLogout) { Icon(Icons.Default.Logout, "Sair") }
+                        DropdownMenu(expanded = showModules, onDismissRequest = { showModules = false }) {
+                            Text("MÓDULOS", modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            visibleDestinations.filter { destination -> bottomDestinations.none { it.route == destination.route } }.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item.label) },
+                                    leadingIcon = { DestinationIcon(item.route) },
+                                    onClick = {
+                                        showModules = false
+                                        navController.navigate(item.route) { launchSingleTop = true; restoreState = true }
+                                    }
+                                )
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         },
         bottomBar = {
-            NavigationBar {
-                bottomDestinations.forEach { item ->
-                    NavigationBarItem(selected = current == item.route, onClick = {
-                        navController.navigate(item.route) { launchSingleTop = true; restoreState = true }
-                    }, icon = { DestinationIcon(item.route) }, label = { Text(item.label) })
+            Surface(shadowElevation = 6.dp) {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    bottomDestinations.forEach { item ->
+                        NavigationBarItem(
+                            selected = current == item.route,
+                            onClick = { navController.navigate(item.route) { launchSingleTop = true; restoreState = true } },
+                            icon = { DestinationIcon(item.route) },
+                            label = { Text(item.label) }
+                        )
+                    }
                 }
             }
         }
