@@ -1,10 +1,11 @@
 const express = require('express');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { githubRequest } = require('../integrations/github/client');
 
 function githubRoutes(config) {
   const router = express.Router();
   router.use(requireAuth(config));
+  const repoBase = (owner, repo) => `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
   router.get('/status', (req, res) => res.json({ configured: Boolean(config.githubToken) }));
   router.get('/repos/:owner', async (req, res, next) => {
@@ -13,19 +14,35 @@ function githubRoutes(config) {
   });
   router.get('/repos/:owner/:repo', async (req, res, next) => {
     try {
-      const base = `/repos/${encodeURIComponent(req.params.owner)}/${encodeURIComponent(req.params.repo)}`;
+      const base = repoBase(req.params.owner, req.params.repo);
       const [repository, commits, issues, pulls] = await Promise.all([
-        githubRequest(config, base),
-        githubRequest(config, `${base}/commits?per_page=10`),
-        githubRequest(config, `${base}/issues?state=open&per_page=20`),
-        githubRequest(config, `${base}/pulls?state=open&per_page=20`)
+        githubRequest(config, base), githubRequest(config, `${base}/commits?per_page=10`),
+        githubRequest(config, `${base}/issues?state=open&per_page=20`), githubRequest(config, `${base}/pulls?state=open&per_page=20`)
       ]);
       res.json({ repository, commits, issues: issues.filter((item) => !item.pull_request), pulls });
     } catch (error) { next(error); }
   });
   router.get('/repos/:owner/:repo/branches', async (req, res, next) => {
-    try { res.json({ items: await githubRequest(config, `/repos/${encodeURIComponent(req.params.owner)}/${encodeURIComponent(req.params.repo)}/branches?per_page=100`) }); }
+    try { res.json({ items: await githubRequest(config, `${repoBase(req.params.owner, req.params.repo)}/branches?per_page=100`) }); }
     catch (error) { next(error); }
+  });
+  router.get('/repos/:owner/:repo/workflows', async (req, res, next) => {
+    try { res.json(await githubRequest(config, `${repoBase(req.params.owner, req.params.repo)}/actions/workflows?per_page=100`)); }
+    catch (error) { next(error); }
+  });
+  router.post('/repos/:owner/:repo/workflows/:workflowId/dispatch', requireRole('Owner', 'Administrator', 'Developer'), async (req, res, next) => {
+    try {
+      const ref = String(req.body?.ref || 'main');
+      await githubRequest(config, `${repoBase(req.params.owner, req.params.repo)}/actions/workflows/${encodeURIComponent(req.params.workflowId)}/dispatches`, { method: 'POST', body: { ref } });
+      res.status(202).json({ queued: true, workflowId: req.params.workflowId, ref });
+    } catch (error) { next(error); }
+  });
+  router.get('/repos/:owner/:repo/code', async (req, res, next) => {
+    try {
+      const path = String(req.query.path || '');
+      const suffix = path ? `/contents/${path.split('/').map(encodeURIComponent).join('/')}` : '/contents';
+      res.json(await githubRequest(config, `${repoBase(req.params.owner, req.params.repo)}${suffix}`));
+    } catch (error) { next(error); }
   });
   return router;
 }
