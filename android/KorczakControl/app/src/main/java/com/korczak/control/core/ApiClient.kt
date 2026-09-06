@@ -15,6 +15,7 @@ class ApiClient(private val session: SessionManager) {
     suspend fun get(path: String): ApiResult = request("GET", path)
     suspend fun post(path: String, body: JSONObject): ApiResult = request("POST", path, body.toString())
     suspend fun patch(path: String, body: JSONObject): ApiResult = request("PATCH", path, body.toString())
+    suspend fun delete(path: String): ApiResult = request("DELETE", path)
 
     private suspend fun request(method: String, path: String, body: String? = null): ApiResult = withContext(Dispatchers.IO) {
         val baseUrl = session.apiUrl()
@@ -35,14 +36,9 @@ class ApiClient(private val session: SessionManager) {
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             connection.disconnect()
-            if (code in 200..299) ApiResult.Success(text, code)
-            else ApiResult.Failure(extractError(text, "Erro HTTP $code"), code)
-        } catch (error: Exception) {
-            ApiResult.Failure(error.message ?: "Falha de comunicação com a API.")
-        }
+            if (code in 200..299) ApiResult.Success(text, code) else ApiResult.Failure(extractError(text, "Erro HTTP $code"), code)
+        } catch (error: Exception) { ApiResult.Failure(error.message ?: "Falha de comunicação com a API.") }
     }
 
-    private fun extractError(body: String, fallback: String): String = try {
-        JSONObject(body).optString("error").ifBlank { fallback }
-    } catch (_: Exception) { fallback }
+    private fun extractError(body: String, fallback: String): String = try { JSONObject(body).optString("error").ifBlank { fallback } } catch (_: Exception) { fallback }
 }
