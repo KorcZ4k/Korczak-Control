@@ -57,11 +57,13 @@ jobs:
 
       - name: Restore release keystore
         working-directory: .
-        run: echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > android/KorczakControl/app/korczak-release.jks
+        run: |
+          echo '${{ secrets.ANDROID_KEYSTORE_BASE64 }}' | base64 --decode > android/KorczakControl/app/korczak-release.jks
+          test -s android/KorczakControl/app/korczak-release.jks
 
       - name: Build signed release APK
         env:
-          ANDROID_KEYSTORE_FILE: app/korczak-release.jks
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android/KorczakControl/app/korczak-release.jks
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
