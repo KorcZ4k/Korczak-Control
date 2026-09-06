@@ -15,6 +15,7 @@ const { renderRoutes } = require('./routes/render');
 const { databasesRoutes } = require('./routes/databases');
 const { managedResourcesRoutes } = require('./routes/managedResources');
 const { eventsRoutes } = require('./routes/events');
+const { integrationsRoutes } = require('./routes/integrations');
 const config = loadConfig();
 const app = express();
 const startedAt = Date.now();
@@ -42,7 +43,12 @@ app.get('/health', (req, res) => res.json({
     MoonTensura: Boolean(config.tensuraDbUri),
     KorczakTechSite: Boolean(config.kzSiteDbUri)
   },
-  integrations: { github: Boolean(config.githubToken), render: Boolean(config.renderApiKey) },
+  integrations: {
+    github: Boolean(config.githubToken),
+    render: Boolean(config.renderApiKey),
+    kzSiteApi: Boolean(config.kzSiteApi),
+    kzControlApi: Boolean(config.kzControlApi)
+  },
   uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString()
 }));
 
@@ -56,6 +62,7 @@ app.use('/api/render', renderRoutes(config));
 app.use('/api/databases', databasesRoutes(config));
 app.use('/api/managed', managedResourcesRoutes(config));
 app.use('/api/events', eventsRoutes(config));
+app.use('/api/integrations', integrationsRoutes(config));
 
 app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestId: req.requestId }));
 app.use((error, req, res, next) => {
