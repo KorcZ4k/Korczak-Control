@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const User = require('../models/User');
+const getUserModel = require('../models/User');
 const AuditLog = require('../models/AuditLog');
 const { requireAuth } = require('../middleware/auth');
 const { safeUser } = require('./auth');
@@ -11,7 +11,7 @@ function canManageAccount(actor, target) {
   if (actor.accountId === target.accountId) return false;
   return canManageRole(actor.role, target.role);
 }
-async function currentActor(req) { return User.findById(req.auth.sub); }
+async function currentActor(req) { return getUserModel().findById(req.auth.sub); }
 async function log(actor, target, action, details = {}) { await AuditLog.create({ actorAccountId: actor.accountId, actorRole: actor.role, targetAccountId: target.accountId, action, details }); }
 
 function accountsRoutes(config) {
@@ -29,6 +29,7 @@ function accountsRoutes(config) {
   router.get('/organization', (req, res) => res.json({ departments: DEPARTMENTS, hierarchy: ORGANIZATION_TREE }));
   router.get('/', async (req, res, next) => {
     try {
+      const User = getUserModel();
       const actor = await currentActor(req);
       if (!actor) return res.status(401).json({ error: 'Session unavailable.' });
       const users = await User.find().sort({ createdAt: -1 });
@@ -39,6 +40,7 @@ function accountsRoutes(config) {
 
   router.get('/:accountId', async (req, res, next) => {
     try {
+      const User = getUserModel();
       const actor = await currentActor(req); const account = await User.findOne({ accountId: req.params.accountId });
       if (!actor || !account) return res.status(404).json({ error: 'Account not found.' });
       if (actor.role !== 'FOUNDER' && actor.accountId !== account.accountId && !canManageAccount(actor, account)) return res.status(403).json({ error: 'You cannot view this account.' });
@@ -49,6 +51,7 @@ function accountsRoutes(config) {
 
   router.post('/', async (req, res, next) => {
     try {
+      const User = getUserModel();
       const actor = await currentActor(req);
       if (!actor) return res.status(401).json({ error: 'Session unavailable.' });
       const { name, email, password, role = 'VIEWER', department = '', managerAccountId = '', permissions = {}, resourcePermissions = [] } = req.body || {};
@@ -62,6 +65,7 @@ function accountsRoutes(config) {
 
   router.patch('/:accountId/permissions', async (req, res, next) => {
     try {
+      const User = getUserModel();
       const actor = await currentActor(req); const account = await User.findOne({ accountId: req.params.accountId });
       if (!actor || !account) return res.status(404).json({ error: 'Account not found.' });
       if (actor.role !== 'FOUNDER' && !canManageAccount(actor, account)) return res.status(403).json({ error: 'You can only administer accounts below your role.' });
