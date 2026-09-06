@@ -1,4 +1,6 @@
 const jwt = require('jsonwebtoken');
+const { roleInfo } = require('../config/organization');
+
 function requireAuth(config) {
   return (req, res, next) => {
     const header = req.get('authorization') || '';
@@ -8,7 +10,15 @@ function requireAuth(config) {
     catch { return res.status(401).json({ error: 'Invalid or expired session.', requestId: req.requestId }); }
   };
 }
+
+const ROLE_THRESHOLDS = Object.freeze({ Owner: 100, Administrator: 60, Developer: 20 });
 function requireRole(...roles) {
-  return (req, res, next) => roles.includes(req.auth?.role) ? next() : res.status(403).json({ error: 'Insufficient permission.', requestId: req.requestId });
+  const minimumRank = Math.min(...roles.map((role) => ROLE_THRESHOLDS[role] ?? 101));
+  return (req, res, next) => {
+    const role = req.auth?.role;
+    if (roles.includes(role)) return next();
+    const info = roleInfo(role);
+    return info.rank >= minimumRank ? next() : res.status(403).json({ error: 'Insufficient permission.', requestId: req.requestId });
+  };
 }
 module.exports = { requireAuth, requireRole };
