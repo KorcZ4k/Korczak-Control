@@ -24,7 +24,8 @@ data class IntegrationItem(val id: String, val name: String, val status: String,
 
 @Composable
 fun IntegrationsScreen() {
-    val client = remember { ApiClient(SessionManager(LocalContext.current)) }
+    val context = LocalContext.current
+    val client = remember(context) { ApiClient(SessionManager(context)) }
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
