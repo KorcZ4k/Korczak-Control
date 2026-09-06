@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+*keystore*base64*.txt
+*.b64
 
 # Node.js
 node_modules/
