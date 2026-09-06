@@ -19,6 +19,7 @@ const { eventsRoutes } = require('./routes/events');
 
 const config = loadConfig();
 const app = express();
+const authRouter = authRoutes(config);
 const startedAt = Date.now();
 
 app.disable('x-powered-by');
@@ -44,6 +45,14 @@ function databaseConnected() {
   return mongoose.connection.readyState === 1;
 }
 
+function requireDatabase(req, res, next) {
+  if (databaseConnected()) return next();
+  return res.status(503).json({
+    error: 'A base de dados de autenticação está indisponível.',
+    requestId: req.requestId
+  });
+}
+
 app.get('/', (req, res) => res.json({
   service: 'Korczak Control API',
   status: databaseConnected() ? 'online' : 'degraded',
@@ -52,9 +61,8 @@ app.get('/', (req, res) => res.json({
 
 app.get('/health', (req, res) => {
   const connected = databaseConnected();
-  const status = connected ? 'ok' : 'degraded';
   res.status(connected ? 200 : 503).json({
-    status,
+    status: connected ? 'ok' : 'degraded',
     service: config.serviceName,
     version: config.version,
     environment: config.environment,
@@ -69,19 +77,16 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/api/auth', (req, res, next) => {
-  if (!databaseConnected()) return res.status(503).json({ error: 'A base de dados de autenticação está indisponível.', requestId: req.requestId });
-  return authRoutes(config)(req, res, next);
-});
-app.use('/api/accounts', accountsRoutes(config));
-app.use('/api/dashboard', dashboardRoutes(config));
-app.use('/api/resources', resourcesRoutes(config));
-app.use('/api/sites', sitesRoutes(config));
-app.use('/api/github', githubRoutes(config));
-app.use('/api/render', renderRoutes(config));
-app.use('/api/databases', databasesRoutes(config));
-app.use('/api/managed', managedResourcesRoutes(config));
-app.use('/api/events', eventsRoutes(config));
+app.use('/api/auth', requireDatabase, authRouter);
+app.use('/api/accounts', requireDatabase, accountsRoutes(config));
+app.use('/api/dashboard', requireDatabase, dashboardRoutes(config));
+app.use('/api/resources', requireDatabase, resourcesRoutes(config));
+app.use('/api/sites', requireDatabase, sitesRoutes(config));
+app.use('/api/github', requireDatabase, githubRoutes(config));
+app.use('/api/render', requireDatabase, renderRoutes(config));
+app.use('/api/databases', requireDatabase, databasesRoutes(config));
+app.use('/api/managed', requireDatabase, managedResourcesRoutes(config));
+app.use('/api/events', requireDatabase, eventsRoutes(config));
 
 app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestId: req.requestId }));
 app.use((error, req, res, next) => {
@@ -95,7 +100,9 @@ app.use((error, req, res, next) => {
 
 let server;
 async function start() {
-  if (!config.adminDbUri) throw new Error('ADMIN_DB_URI, KZSITE_DB_URI or MONGODB_URI is required to start the Korczak Control API.');
+  if (!config.adminDbUri) {
+    throw new Error('ADMIN_DB_URI, KZSITE_DB_URI or MONGODB_URI is required to start the Korczak Control API.');
+  }
   await connectDatabase(config.adminDbUri, config.adminDbName);
   server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`));
 }
