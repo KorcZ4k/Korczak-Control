@@ -11,29 +11,22 @@ function canManageAccount(actor, target) {
   if (actor.accountId === target.accountId) return false;
   return canManageRole(actor.role, target.role);
 }
-
-async function currentActor(req) {
-  return User.findById(req.auth.sub);
-}
-
-async function log(actor, target, action, details = {}) {
-  await AuditLog.create({
-    actorAccountId: actor.accountId,
-    actorRole: actor.role,
-    targetAccountId: target.accountId,
-    action,
-    details
-  });
-}
+async function currentActor(req) { return User.findById(req.auth.sub); }
+async function log(actor, target, action, details = {}) { await AuditLog.create({ actorAccountId: actor.accountId, actorRole: actor.role, targetAccountId: target.accountId, action, details }); }
 
 function accountsRoutes(config) {
   const router = express.Router();
   router.use(requireAuth(config));
 
-  router.get('/organization', async (req, res) => {
-    res.json({ departments: DEPARTMENTS, hierarchy: ORGANIZATION_TREE });
+  router.get('/me', async (req, res, next) => {
+    try {
+      const actor = await currentActor(req);
+      if (!actor) return res.status(401).json({ error: 'Session unavailable.' });
+      res.json({ account: safeUser(actor), roleInfo: roleInfo(actor.role) });
+    } catch (error) { next(error); }
   });
 
+  router.get('/organization', (req, res) => res.json({ departments: DEPARTMENTS, hierarchy: ORGANIZATION_TREE }));
   router.get('/', async (req, res, next) => {
     try {
       const actor = await currentActor(req);
@@ -46,13 +39,10 @@ function accountsRoutes(config) {
 
   router.get('/:accountId', async (req, res, next) => {
     try {
-      const actor = await currentActor(req);
-      const account = await User.findOne({ accountId: req.params.accountId });
+      const actor = await currentActor(req); const account = await User.findOne({ accountId: req.params.accountId });
       if (!actor || !account) return res.status(404).json({ error: 'Account not found.' });
       if (actor.role !== 'FOUNDER' && actor.accountId !== account.accountId && !canManageAccount(actor, account)) return res.status(403).json({ error: 'You cannot view this account.' });
-      const activities = (actor.role === 'FOUNDER' || canManageAccount(actor, account))
-        ? await AuditLog.find({ targetAccountId: account.accountId }).sort({ createdAt: -1 }).limit(50).lean()
-        : [];
+      const activities = (actor.role === 'FOUNDER' || canManageAccount(actor, account)) ? await AuditLog.find({ targetAccountId: account.accountId }).sort({ createdAt: -1 }).limit(50).lean() : [];
       res.json({ account: safeUser(account), roleInfo: roleInfo(account.role), activities });
     } catch (error) { next(error); }
   });
@@ -72,28 +62,21 @@ function accountsRoutes(config) {
 
   router.patch('/:accountId/permissions', async (req, res, next) => {
     try {
-      const actor = await currentActor(req);
-      const account = await User.findOne({ accountId: req.params.accountId });
+      const actor = await currentActor(req); const account = await User.findOne({ accountId: req.params.accountId });
       if (!actor || !account) return res.status(404).json({ error: 'Account not found.' });
       if (actor.role !== 'FOUNDER' && !canManageAccount(actor, account)) return res.status(403).json({ error: 'You can only administer accounts below your role.' });
       const { permissions, resourcePermissions, department, active, role, managerAccountId } = req.body || {};
-      if (typeof role === 'string' && role !== account.role) {
-        if (role === 'FOUNDER' || !canManageRole(actor.role, role)) return res.status(403).json({ error: 'Invalid target role for your hierarchy level.' });
-        account.role = role;
-      }
+      if (typeof role === 'string' && role !== account.role) { if (role === 'FOUNDER' || !canManageRole(actor.role, role)) return res.status(403).json({ error: 'Invalid target role for your hierarchy level.' }); account.role = role; }
       if (permissions && typeof permissions === 'object') account.permissions = permissions;
       if (Array.isArray(resourcePermissions)) account.resourcePermissions = resourcePermissions;
       if (typeof department === 'string') account.department = department.trim();
       if (typeof managerAccountId === 'string') account.managerAccountId = managerAccountId.trim();
       if (typeof active === 'boolean') account.active = active;
-      account.markModified('permissions');
-      await account.save();
+      account.markModified('permissions'); await account.save();
       await log(actor, account, 'account.permissions_updated', { changed: { permissions: Boolean(permissions), resourcePermissions: Array.isArray(resourcePermissions), department: typeof department === 'string', active: typeof active === 'boolean', role: typeof role === 'string', managerAccountId: typeof managerAccountId === 'string' } });
       res.json({ account: safeUser(account) });
     } catch (error) { next(error); }
   });
-
   return router;
 }
-
 module.exports = { accountsRoutes };
