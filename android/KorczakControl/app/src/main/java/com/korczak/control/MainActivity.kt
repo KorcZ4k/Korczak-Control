@@ -22,6 +22,7 @@ import com.korczak.control.auth.LoginScreen
 import com.korczak.control.core.SessionManager
 import com.korczak.control.dashboard.DashboardScreen
 import com.korczak.control.modules.ApiDataScreen
+import com.korczak.control.modules.IntegrationsScreen
 import com.korczak.control.settings.SettingsScreen
 import com.korczak.control.ui.theme.KorczakControlTheme
 import com.korczak.control.update.AppUpdate
@@ -41,14 +42,11 @@ private fun RootApp() {
     val context = LocalContext.current
     val session = remember { SessionManager(context) }
     val authRepository = remember { AuthRepository(session) }
-    val scope = rememberCoroutineScope()
     var authenticated by remember { mutableStateOf(session.isAuthenticated()) }
     var checkingSession by remember { mutableStateOf(session.isAuthenticated()) }
 
     LaunchedEffect(Unit) {
-        if (authenticated) {
-            authRepository.validateSession().onFailure { authenticated = false }
-        }
+        if (authenticated) authRepository.validateSession().onFailure { authenticated = false }
         checkingSession = false
     }
 
@@ -61,25 +59,26 @@ private fun RootApp() {
 
 private data class Destination(val route: String, val label: String, val path: String? = null)
 private val destinations = listOf(
-    Destination("dashboard", "Painel"), Destination("sites", "Sites", "/api/sites"),
-    Destination("apis", "APIs", "/api/managed/api"), Destination("apps", "Apps", "/api/managed/app"),
-    Destination("databases", "MongoDB", "/api/databases/stats"), Destination("github", "GitHub", "/api/github/status"),
-    Destination("render", "Render", "/api/render/status"), Destination("notifications", "Eventos", "/api/events/unread"),
-    Destination("settings", "Ajustes")
+    Destination("dashboard", "Painel"), Destination("integrations", "Integrações"),
+    Destination("sites", "Sites", "/api/sites"), Destination("apis", "APIs", "/api/managed/api"),
+    Destination("apps", "Apps", "/api/managed/app"), Destination("databases", "MongoDB", "/api/databases/stats"),
+    Destination("github", "GitHub", "/api/github/status"), Destination("render", "Render", "/api/render/status"),
+    Destination("notifications", "Eventos", "/api/events/unread"), Destination("settings", "Ajustes")
 )
 
 @Composable
 private fun DestinationIcon(route: String) {
     val icon = when (route) {
-        "dashboard" -> Icons.Default.Home; "sites" -> Icons.Default.Language; "apis" -> Icons.Default.Api
-        "apps" -> Icons.Default.Apps; "databases" -> Icons.Default.Storage; "github" -> Icons.Default.Code
-        "render" -> Icons.Default.Cloud; "notifications" -> Icons.Default.Notifications; else -> Icons.Default.Settings
+        "dashboard" -> Icons.Default.Home; "integrations" -> Icons.Default.Link
+        "sites" -> Icons.Default.Language; "apis" -> Icons.Default.Api; "apps" -> Icons.Default.Apps
+        "databases" -> Icons.Default.Storage; "github" -> Icons.Default.Code; "render" -> Icons.Default.Cloud
+        "notifications" -> Icons.Default.Notifications; else -> Icons.Default.Settings
     }
     Icon(icon, contentDescription = null)
 }
 
 private fun isAllowed(destination: Destination, permissions: JSONObject, securedMode: Boolean): Boolean {
-    if (!securedMode || destination.route in listOf("dashboard", "settings", "notifications")) return true
+    if (!securedMode || destination.route in listOf("dashboard", "integrations", "settings", "notifications")) return true
     return when (destination.route) {
         "sites" -> permissions.optBoolean("sites")
         "apis" -> permissions.optBoolean("apis")
@@ -106,7 +105,7 @@ fun ControlApp(onLogout: () -> Unit) {
     val permissions = session.permissions()
     val securedMode = session.isApiConfigured()
     val visibleDestinations = destinations.filter { isAllowed(it, permissions, securedMode) }
-    val preferredBottom = listOf("dashboard", "sites", "github", "notifications", "settings").mapNotNull { route -> visibleDestinations.firstOrNull { it.route == route } }
+    val preferredBottom = listOf("dashboard", "integrations", "github", "notifications", "settings").mapNotNull { route -> visibleDestinations.firstOrNull { it.route == route } }
     val bottomDestinations = if (preferredBottom.size >= 3) preferredBottom else visibleDestinations.take(5)
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<AppUpdate?>(null) }
@@ -129,7 +128,8 @@ fun ControlApp(onLogout: () -> Unit) {
     ) { padding ->
         NavHost(navController, "dashboard", Modifier.fillMaxSize().padding(padding)) {
             composable("dashboard") { DashboardScreen() }
-            visibleDestinations.filter { it.route !in listOf("dashboard", "settings") }.forEach { item -> composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) } }
+            composable("integrations") { IntegrationsScreen() }
+            visibleDestinations.filter { it.route !in listOf("dashboard", "integrations", "settings") }.forEach { item -> composable(item.route) { ApiDataScreen(item.label, item.path.orEmpty()) } }
             composable("settings") { SettingsScreen() }
         }
     }
