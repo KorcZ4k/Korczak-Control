@@ -7,32 +7,20 @@ function loadConfig() {
   const kzSiteDbUri = process.env.KZSITE_DB_URI || '';
   const adminDbUri = process.env.ADMIN_DB_URI || process.env.MONGODB_URI || '';
 
+  // Explicit names used by the Korczak Control interface.
   const tensuraDbName = process.env.TENSURA_DB_NAME || 'TensuraMoon';
-  const kzSiteDbName = process.env.KZSITE_DB_NAME || 'KorczakTechSite';
+  const kzSiteDbName = process.env.KZSITE_DB_NAME || process.env.KZSITE_DB_NAME_KORCZAKTECHSITE || 'KorczakTechSite';
   const adminDbName = process.env.ADMIN_DB_NAME || 'KorczakControl';
   const adminCollectionName = process.env.ADMIN_COLLECTION_NAME || 'Users';
 
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('PORT must be a valid TCP port.');
-  }
-  if (jwtSecret.length < 32) {
-    throw new Error('JWT_SECRET or JWT must contain at least 32 characters.');
-  }
-  if (!adminDbUri && environment === 'production') {
-    throw new Error('ADMIN_DB_URI is required in production.');
-  }
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.');
+  if (jwtSecret.length < 32) throw new Error('JWT_SECRET or JWT must contain at least 32 characters.');
+  if (!adminDbUri && environment === 'production') throw new Error('ADMIN_DB_URI is required in production.');
 
   return Object.freeze({
-    environment,
-    port,
-    jwtSecret,
-    adminDbUri,
-    tensuraDbUri,
-    kzSiteDbUri,
-    adminDbName,
-    adminCollectionName,
-    tensuraDbName,
-    kzSiteDbName,
+    environment, port, jwtSecret,
+    adminDbUri, tensuraDbUri, kzSiteDbUri,
+    adminDbName, adminCollectionName, tensuraDbName, kzSiteDbName,
     bootstrapToken: process.env.BOOTSTRAP_TOKEN || '',
     corsOrigin: process.env.CORS_ORIGIN || '',
     githubToken: process.env.GITHUB_TOKEN || '',
