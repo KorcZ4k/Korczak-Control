@@ -1,7 +1,5 @@
 package com.korczak.control
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -25,6 +23,7 @@ import com.korczak.control.modules.ApiDataScreen
 import com.korczak.control.modules.IntegrationsScreen
 import com.korczak.control.settings.SettingsScreen
 import com.korczak.control.ui.theme.KorczakControlTheme
+import com.korczak.control.update.AppInstaller
 import com.korczak.control.update.AppUpdate
 import com.korczak.control.update.AppUpdateRepository
 import kotlinx.coroutines.launch
@@ -109,14 +108,46 @@ fun ControlApp(onLogout: () -> Unit) {
     val bottomDestinations = if (preferredBottom.size >= 3) preferredBottom else visibleDestinations.take(5)
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<AppUpdate?>(null) }
+    var updateProgress by remember { mutableStateOf<Int?>(null) }
+    var updateError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) { update = AppUpdateRepository.check(BuildConfig.VERSION_NAME) }
 
     if (update != null) AlertDialog(
-        onDismissRequest = { update = null }, icon = { Icon(Icons.Default.SystemUpdate, null) }, title = { Text("Atualização disponível") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("Versão ${update!!.version} está disponível."); Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall); Text("Ao tocar em atualizar, o APK será baixado. O Android pedirá a confirmação da instalação.", style = MaterialTheme.typography.labelSmall) } },
-        confirmButton = { TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update!!.downloadUrl))); update = null }) { Text("Atualizar") } },
-        dismissButton = { TextButton(onClick = { update = null }) { Text("Agora não") } }
+        onDismissRequest = { if (updateProgress == null) update = null },
+        icon = { Icon(Icons.Default.SystemUpdate, null) },
+        title = { Text(if (updateProgress == null) "Atualização disponível" else "Atualizando") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Versão ${update!!.version} está disponível.")
+                if (updateProgress == null) {
+                    Text(update!!.notes.take(600), style = MaterialTheme.typography.bodySmall)
+                    Text("O aplicativo fará o download automaticamente e abrirá a confirmação de instalação do Android.", style = MaterialTheme.typography.labelSmall)
+                } else {
+                    LinearProgressIndicator(progress = { (updateProgress ?: 0) / 100f }, modifier = Modifier.fillMaxWidth())
+                    Text("${updateProgress ?: 0}% concluído")
+                }
+            }
+        },
+        confirmButton = {
+            if (updateProgress == null) TextButton(onClick = {
+                val selectedUpdate = update ?: return@TextButton
+                updateError = null
+                updateProgress = 0
+                scope.launch {
+                    runCatching { AppInstaller.downloadAndInstall(context, selectedUpdate) { updateProgress = it } }
+                        .onFailure { updateError = it.message ?: "Não foi possível concluir a atualização."; updateProgress = null }
+                }
+            }) { Text("Atualizar") }
+        },
+        dismissButton = { if (updateProgress == null) TextButton(onClick = { update = null }) { Text("Agora não") } }
+    )
+
+    if (updateError != null) AlertDialog(
+        onDismissRequest = { updateError = null },
+        title = { Text("Falha na atualização") },
+        text = { Text(updateError!!) },
+        confirmButton = { TextButton(onClick = { updateError = null }) { Text("OK") } }
     )
 
     Scaffold(
