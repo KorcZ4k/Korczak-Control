@@ -21,11 +21,23 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
     val session = remember { SessionManager(context) }
     val repository = remember { AuthRepository(session) }
     val scope = rememberCoroutineScope()
+
+    var setupMode by remember { mutableStateOf(false) }
+    var setupChecked by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var showPassword by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        repository.setupRequired()
+            .onSuccess { setupMode = it }
+            .onFailure { error = it.message ?: "Não foi possível conectar à API." }
+        setupChecked = true
+    }
 
     Column(
         Modifier.fillMaxSize().padding(24.dp),
@@ -33,7 +45,21 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
     ) {
         Icon(Icons.Default.Lock, null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary)
         Text("KORCZAK CONTROL", style = MaterialTheme.typography.headlineMedium)
-        Text("Entre com sua conta para acessar os serviços autorizados.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            if (setupMode) "Crie a primeira conta administrativa para inicializar o Korczak Control."
+            else "Entre com sua conta para acessar os serviços autorizados.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        if (setupMode) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nome") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         OutlinedTextField(
             value = email,
@@ -55,21 +81,40 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth()
         )
+
+        message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
 
         Button(
-            enabled = !loading && email.isNotBlank() && password.isNotBlank(),
+            enabled = setupChecked && !loading && email.isNotBlank() && password.isNotBlank() && (!setupMode || name.trim().length >= 2),
             modifier = Modifier.fillMaxWidth(),
             onClick = {
                 loading = true
                 error = null
+                message = null
                 scope.launch {
-                    repository.login(email.trim(), password)
-                        .onSuccess { onLoggedIn() }
-                        .onFailure { error = it.message ?: "Não foi possível entrar." }
+                    if (setupMode) {
+                        repository.registerFirstAccount(name, email.trim(), password)
+                            .onSuccess {
+                                message = "Conta criada. Faça login para continuar."
+                                password = ""
+                                setupMode = false
+                            }
+                            .onFailure { error = it.message ?: "Não foi possível criar a conta." }
+                    } else {
+                        repository.login(email.trim(), password)
+                            .onSuccess { onLoggedIn() }
+                            .onFailure { error = it.message ?: "Não foi possível entrar." }
+                    }
                     loading = false
                 }
             }
-        ) { Text(if (loading) "Entrando..." else "Entrar") }
+        ) {
+            Text(
+                if (loading) "Processando..."
+                else if (setupMode) "Criar primeira conta"
+                else "Entrar"
+            )
+        }
     }
 }
