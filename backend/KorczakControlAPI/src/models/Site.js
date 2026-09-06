@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getDatabaseConnection } = require('../db');
 
 const siteSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 120 },
@@ -13,4 +14,14 @@ const siteSchema = new mongoose.Schema({
   notes: { type: String, trim: true, maxlength: 3000, default: '' }
 }, { timestamps: true, collection: 'control_sites' });
 
-module.exports = mongoose.models.ControlSite || mongoose.model('ControlSite', siteSchema);
+function getSiteModel() {
+  const connection = getDatabaseConnection('KorczakControl');
+  if (!connection || connection.readyState !== 1) {
+    const error = new Error('KorczakControl database connection is unavailable.');
+    error.statusCode = 503;
+    throw error;
+  }
+  return connection.models.ControlSite || connection.model('ControlSite', siteSchema, 'control_sites');
+}
+
+module.exports = getSiteModel;
