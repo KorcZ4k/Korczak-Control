@@ -6,14 +6,32 @@ function eventsRoutes(config) {
   const router = express.Router();
   router.use(requireAuth(config));
 
+  async function loadItems(req) {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const filter = {};
+    if (req.query.category) filter.category = req.query.category;
+    if (req.query.severity) filter.severity = req.query.severity;
+    return ControlEvent.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+  }
+
   router.get('/', async (req, res, next) => {
+    try { res.json({ items: await loadItems(req) }); } catch (error) { next(error); }
+  });
+
+  // Alias used by older Android builds and the dashboard. Keeping it avoids Route not found during staged deployments.
+  router.get('/list', async (req, res, next) => {
+    try { res.json({ items: await loadItems(req) }); } catch (error) { next(error); }
+  });
+
+  router.get('/summary', async (req, res, next) => {
     try {
-      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-      const filter = {};
-      if (req.query.category) filter.category = req.query.category;
-      if (req.query.severity) filter.severity = req.query.severity;
-      const items = await ControlEvent.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
-      res.json({ items });
+      const actorId = String(req.auth?.sub || '');
+      const [total, unread, items] = await Promise.all([
+        ControlEvent.countDocuments(),
+        ControlEvent.countDocuments({ readBy: { $ne: actorId } }),
+        ControlEvent.find({}).sort({ createdAt: -1 }).limit(10).lean()
+      ]);
+      res.json({ total, unread, items });
     } catch (error) { next(error); }
   });
 
