@@ -31,6 +31,9 @@ function loadConfig() {
     corsOrigin: process.env.CORS_ORIGIN || '',
     githubToken: process.env.GITHUB_TOKEN || '',
     renderApiKey: process.env.RENDER_API_KEY || '',
+    kzSiteApi: process.env.KZSITE_API || '',
+    kzControlApi: process.env.KZCONTROL_API || '',
+    tensuraMoonGithubRepo: process.env.TENSURAMOON_GITHUB_REPO || '',
     serviceName: 'korczak-control-api',
     version: process.env.npm_package_version || '0.3.0'
   });
