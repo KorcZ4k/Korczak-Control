@@ -14,10 +14,10 @@ sealed interface ApiResult {
 class ApiClient(private val session: SessionManager) {
     suspend fun get(path: String): ApiResult = request("GET", path)
     suspend fun post(path: String, body: JSONObject): ApiResult = request("POST", path, body.toString())
+    suspend fun patch(path: String, body: JSONObject): ApiResult = request("PATCH", path, body.toString())
 
     private suspend fun request(method: String, path: String, body: String? = null): ApiResult = withContext(Dispatchers.IO) {
         val baseUrl = session.apiUrl()
-
         try {
             val connection = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = method
@@ -44,7 +44,5 @@ class ApiClient(private val session: SessionManager) {
 
     private fun extractError(body: String, fallback: String): String = try {
         JSONObject(body).optString("error").ifBlank { fallback }
-    } catch (_: Exception) {
-        fallback
-    }
+    } catch (_: Exception) { fallback }
 }
