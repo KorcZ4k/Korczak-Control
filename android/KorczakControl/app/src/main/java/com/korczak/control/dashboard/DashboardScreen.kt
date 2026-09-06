@@ -8,70 +8,89 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.korczak.control.core.SessionManager
-import com.korczak.control.ui.components.MetricCard
-import com.korczak.control.ui.components.StatusCard
 
 @Composable
 fun DashboardScreen() {
     val session = SessionManager(LocalContext.current)
     val permissions = session.permissions()
     val mongo = permissions.optJSONObject("mongodb")
-    val integrations = listOfNotNull(
-        if (permissions.optBoolean("github")) Triple("GitHub", "Código e repositórios", Icons.Default.Code) else null,
-        if (permissions.optBoolean("render")) Triple("Render", "Serviços e infraestrutura", Icons.Default.Cloud) else null,
-        if (mongo?.optBoolean("KorczakControl") == true || mongo?.optBoolean("MoonTensura") == true || mongo?.optBoolean("KorczakTechSite") == true) Triple("MongoDB", "Dados autorizados", Icons.Default.Storage) else null,
-        if (permissions.optBoolean("sites")) Triple("Sites", "Produtos web", Icons.Default.Language) else null,
-        if (permissions.optBoolean("bots")) Triple("Bots", "Serviços automatizados", Icons.Default.SmartToy) else null,
-        if (permissions.optBoolean("applications")) Triple("Aplicativos", "Apps conectados", Icons.Default.Apps) else null,
-        if (permissions.optBoolean("apis")) Triple("APIs", "Serviços de integração", Icons.Default.Api) else null
+    val services = listOfNotNull(
+        if (permissions.optBoolean("github")) Service("GitHub", "Repositórios e automações", Icons.Default.Code) else null,
+        if (permissions.optBoolean("render")) Service("Render", "Infraestrutura e serviços", Icons.Default.Cloud) else null,
+        if (mongo?.length() ?: 0 > 0) Service("MongoDB", "Acesso a bases autorizadas", Icons.Default.Storage) else null,
+        if (permissions.optBoolean("bots")) Service("Bots", "Serviços automatizados", Icons.Default.SmartToy) else null,
+        if (permissions.optBoolean("apis")) Service("APIs", "Interfaces de serviço", Icons.Default.Api) else null
     )
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("VISÃO GERAL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("VISÃO GERAL", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Text("Centro de controle", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Monitore serviços, acessos e operações da sua organização.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+
         Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text("KORCZAK CONTROL", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                Text("Olá, ${session.accountName().ifBlank { "usuário" }}", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
-                Text("${session.accountRole().ifBlank { "Conta" }}${session.department().takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}", color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(session.accountName().ifBlank { "Sessão administrativa" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    listOf(session.accountRole(), session.department()).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Acesso autenticado" },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(Modifier.height(8.dp))
+                Text("SESSÃO ATIVA", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricCard("SERVIÇOS", integrations.size.toString(), Modifier.weight(1f))
-            MetricCard("SESSÃO", "ATIVA", Modifier.weight(1f))
+        Text("ESTADO DO AMBIENTE", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            SummaryCard("Serviços autorizados", services.size.toString(), Modifier.weight(1f))
+            SummaryCard("Sessão", "Ativa", Modifier.weight(1f))
         }
 
-        StatusCard("Sistema operacional", "Sua sessão está protegida e as permissões foram carregadas.", "Acesse Integrações para verificar o estado dos serviços.")
-
-        Text("SERVIÇOS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        if (integrations.isEmpty()) Text("Nenhum serviço adicional foi autorizado para esta conta.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        integrations.forEach { (name, description, icon) ->
-            Card(
-                Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        Text("SERVIÇOS DISPONÍVEIS", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        if (services.isEmpty()) {
+            Text("Nenhum serviço adicional está disponível para esta conta.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else services.forEach { service ->
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Row(Modifier.padding(15.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Box(Modifier.size(46.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
-                            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-                        }
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                        Icon(service.icon, null, Modifier.padding(10.dp).size(22.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-                        Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("AUTORIZADO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Text(service.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(service.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Text("DISPONÍVEL", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+    }
+}
+
+private data class Service(val name: String, val description: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+
+@Composable
+private fun SummaryCard(label: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier, shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
