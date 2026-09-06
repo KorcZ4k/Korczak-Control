@@ -22,7 +22,8 @@ private data class IntegrationStatus(val name: String, val detail: String, val s
 
 @Composable
 fun SettingsScreen() {
-    val client = remember { ApiClient(SessionManager(LocalContext.current)) }
+    val context = LocalContext.current
+    val client = remember(context) { ApiClient(SessionManager(context)) }
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -60,7 +61,8 @@ fun SettingsScreen() {
                 Text("Informações operacionais do aplicativo e das conexões.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             FilledTonalIconButton(onClick = { scope.launch { load() } }, enabled = !loading) {
-                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Atualizar")
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Default.Refresh, "Atualizar")
             }
         }
 
