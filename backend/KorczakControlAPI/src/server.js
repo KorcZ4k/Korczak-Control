@@ -1,5 +1,6 @@
 require('dotenv').config();
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
@@ -15,6 +16,7 @@ const { renderRoutes } = require('./routes/render');
 const { databasesRoutes } = require('./routes/databases');
 const { managedResourcesRoutes } = require('./routes/managedResources');
 const { eventsRoutes } = require('./routes/events');
+
 const config = loadConfig();
 const app = express();
 const startedAt = Date.now();
@@ -22,7 +24,11 @@ const startedAt = Date.now();
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '256kb' }));
-app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.setHeader('X-Request-Id', req.requestId); next(); });
+app.use((req, res, next) => {
+  req.requestId = crypto.randomUUID();
+  res.setHeader('X-Request-Id', req.requestId);
+  next();
+});
 
 const allowedOrigins = config.corsOrigin.split(',').map((v) => v.trim()).filter(Boolean);
 app.use(cors({
@@ -34,19 +40,39 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'x-bootstrap-token']
 }));
 
-app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
-app.get('/health', (req, res) => res.json({
-  status: 'ok', service: config.serviceName, version: config.version, environment: config.environment,
-  databases: {
-    KorczakControl: Boolean(config.adminDbUri),
-    MoonTensura: Boolean(config.tensuraDbUri),
-    KorczakTechSite: Boolean(config.kzSiteDbUri)
-  },
-  integrations: { github: Boolean(config.githubToken), render: Boolean(config.renderApiKey) },
-  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString()
+function databaseConnected() {
+  return mongoose.connection.readyState === 1;
+}
+
+app.get('/', (req, res) => res.json({
+  service: 'Korczak Control API',
+  status: databaseConnected() ? 'online' : 'degraded',
+  version: config.version
 }));
 
-app.use('/api/auth', authRoutes(config));
+app.get('/health', (req, res) => {
+  const connected = databaseConnected();
+  const status = connected ? 'ok' : 'degraded';
+  res.status(connected ? 200 : 503).json({
+    status,
+    service: config.serviceName,
+    version: config.version,
+    environment: config.environment,
+    databases: {
+      KorczakControl: { configured: Boolean(config.adminDbUri), connected },
+      MoonTensura: { configured: Boolean(config.tensuraDbUri) },
+      KorczakTechSite: { configured: Boolean(config.kzSiteDbUri) }
+    },
+    integrations: { github: Boolean(config.githubToken), render: Boolean(config.renderApiKey) },
+    uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.use('/api/auth', (req, res, next) => {
+  if (!databaseConnected()) return res.status(503).json({ error: 'A base de dados de autenticação está indisponível.', requestId: req.requestId });
+  return authRoutes(config)(req, res, next);
+});
 app.use('/api/accounts', accountsRoutes(config));
 app.use('/api/dashboard', dashboardRoutes(config));
 app.use('/api/resources', resourcesRoutes(config));
@@ -61,19 +87,31 @@ app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestI
 app.use((error, req, res, next) => {
   console.error({ requestId: req.requestId, error: error.message });
   const status = error.statusCode || (error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500);
-  res.status(status).json({ error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message, requestId: req.requestId });
+  res.status(status).json({
+    error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message,
+    requestId: req.requestId
+  });
 });
 
 let server;
 async function start() {
-  if (config.adminDbUri) await connectDatabase(config.adminDbUri, config.adminDbName);
+  if (!config.adminDbUri) throw new Error('ADMIN_DB_URI, KZSITE_DB_URI or MONGODB_URI is required to start the Korczak Control API.');
+  await connectDatabase(config.adminDbUri, config.adminDbName);
   server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`));
 }
+
 function shutdown(signal) {
   console.log(`${signal} received. Closing server.`);
   if (!server) return process.exit(0);
-  server.close((error) => process.exit(error ? 1 : 0));
+  server.close(async (error) => {
+    try { await mongoose.disconnect(); } catch {}
+    process.exit(error ? 1 : 0);
+  });
 }
+
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
+start().catch((error) => {
+  console.error('Failed to start API:', error);
+  process.exit(1);
+});
