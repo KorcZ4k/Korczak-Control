@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 
 const founderPermissions = {
   github: true,
@@ -49,6 +49,17 @@ function logLoginFailure(req, reason) {
     event: 'auth.login_failed',
     requestId: req.requestId,
     reason
+  });
+}
+
+function logPasswordReset(req, actor, target, outcome) {
+  console.info({
+    event: 'auth.password_reset',
+    requestId: req.requestId,
+    actorId: actor?._id?.toString?.() || req.auth?.sub,
+    actorRole: actor?.role || req.auth?.role,
+    targetUserId: target?._id?.toString?.(),
+    outcome
   });
 }
 
@@ -168,6 +179,41 @@ function authRoutes(config) {
 
       return res.json({ token, user: safeUser(user) });
     } catch (error) { next(error); }
+  });
+
+  router.post('/admin/reset-password', requireAuth(config), requireRole('FOUNDER'), async (req, res, next) => {
+    try {
+      const { userId, email, newPassword } = req.body || {};
+      const normalizedEmail = normalizeEmail(email);
+
+      if (typeof newPassword !== 'string' || newPassword.length < 12) {
+        return res.status(400).json({ error: 'A nova senha deve conter pelo menos 12 caracteres.' });
+      }
+
+      if (!userId && !validEmail(normalizedEmail)) {
+        return res.status(400).json({ error: 'Informe o userId ou um e-mail válido.' });
+      }
+
+      const target = userId
+        ? await User.findById(userId).select('+passwordHash')
+        : await User.findOne({ email: normalizedEmail }).collation({ locale: 'en', strength: 2 }).select('+passwordHash');
+
+      if (!target) {
+        logPasswordReset(req, null, null, 'target_not_found');
+        return res.status(404).json({ error: 'Usuário não encontrado.' });
+      }
+
+      target.passwordHash = await bcrypt.hash(newPassword, 12);
+      target.passwordResetAt = new Date();
+      target.markModified('passwordHash');
+      await target.save();
+
+      logPasswordReset(req, null, target, 'success');
+      return res.json({ message: 'Senha redefinida com sucesso.', user: safeUser(target) });
+    } catch (error) {
+      logPasswordReset(req, null, null, 'error');
+      next(error);
+    }
   });
 
   router.get('/me', requireAuth(config), async (req, res, next) => {
