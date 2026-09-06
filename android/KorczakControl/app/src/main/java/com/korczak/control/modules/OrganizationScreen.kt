@@ -27,7 +27,8 @@ private val permissionLabels = listOf("github" to "GitHub", "render" to "Render"
 
 @Composable
 fun OrganizationScreen() {
-    val client = remember { ApiClient(SessionManager(LocalContext.current)) }
+    val context = LocalContext.current
+    val client = remember(context) { ApiClient(SessionManager(context)) }
     val scope = rememberCoroutineScope()
     var accounts by remember { mutableStateOf<List<OrganizationAccount>>(emptyList()) }
     var selected by remember { mutableStateOf<OrganizationAccount?>(null) }
@@ -35,7 +36,8 @@ fun OrganizationScreen() {
     var error by remember { mutableStateOf<String?>(null) }
 
     suspend fun load() {
-        loading = true; error = null
+        loading = true
+        error = null
         when (val result = client.get("/api/accounts")) {
             is ApiResult.Success -> runCatching {
                 val array = JSONObject(result.body).optJSONArray("accounts")
@@ -52,7 +54,19 @@ fun OrganizationScreen() {
     }
 
     LaunchedEffect(Unit) { load() }
-    selected?.let { account -> AccountAdministrationScreen(account, { selected = null }) { updated -> accounts = accounts.map { if (it.accountId == updated.accountId) updated else it }; selected = updated }; return }
+
+    val selectedAccount = selected
+    if (selectedAccount != null) {
+        AccountAdministrationScreen(
+            account = selectedAccount,
+            onBack = { selected = null },
+            onSaved = { updated ->
+                accounts = accounts.map { if (it.accountId == updated.accountId) updated else it }
+                selected = updated
+            }
+        )
+        return
+    }
 
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("ORGANIZAÇÃO", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
@@ -82,26 +96,41 @@ fun OrganizationScreen() {
 
 @Composable
 private fun AccountAdministrationScreen(account: OrganizationAccount, onBack: () -> Unit, onSaved: (OrganizationAccount) -> Unit) {
-    val client = remember { ApiClient(SessionManager(LocalContext.current)) }
+    val context = LocalContext.current
+    val client = remember(context) { ApiClient(SessionManager(context)) }
     val scope = rememberCoroutineScope()
     var permissions by remember { mutableStateOf(JSONObject(account.permissions.toString())) }
     var active by remember { mutableStateOf(account.active) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+
     fun mongoEnabled(key: String) = permissions.optJSONObject("mongodb")?.optBoolean(key, false) ?: false
-    fun setMongo(key: String, value: Boolean) { val mongo = permissions.optJSONObject("mongodb") ?: JSONObject(); mongo.put(key, value); permissions.put("mongodb", mongo); permissions = JSONObject(permissions.toString()) }
+    fun setMongo(key: String, value: Boolean) {
+        val mongo = permissions.optJSONObject("mongodb") ?: JSONObject()
+        mongo.put(key, value)
+        permissions.put("mongodb", mongo)
+        permissions = JSONObject(permissions.toString())
+    }
 
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Voltar") }
-            Column { Text(account.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Text(account.accountId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Column {
+                Text(account.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(account.accountId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Text("PERMISSÕES", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         Text("As alterações são enviadas ao servidor e ficam sujeitas às regras de autorização.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             item {
                 PermissionSwitch("Conta ativa", active) { active = it }
-                permissionLabels.forEach { (key, label) -> PermissionSwitch(label, permissions.optBoolean(key, false)) { value -> permissions.put(key, value); permissions = JSONObject(permissions.toString()) } }
+                permissionLabels.forEach { (key, label) ->
+                    PermissionSwitch(label, permissions.optBoolean(key, false)) { value ->
+                        permissions.put(key, value)
+                        permissions = JSONObject(permissions.toString())
+                    }
+                }
                 Text("MONGODB", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 10.dp))
                 PermissionSwitch("Korczak Control", mongoEnabled("KorczakControl")) { setMongo("KorczakControl", it) }
                 PermissionSwitch("Moon Tensura", mongoEnabled("MoonTensura")) { setMongo("MoonTensura", it) }
@@ -110,16 +139,23 @@ private fun AccountAdministrationScreen(account: OrganizationAccount, onBack: ()
         }
         message?.let { Text(it, color = if (it.startsWith("Erro")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary) }
         Button(modifier = Modifier.fillMaxWidth(), enabled = !saving, onClick = {
-            saving = true; message = null
+            saving = true
+            message = null
             scope.launch {
                 val body = JSONObject().put("permissions", permissions).put("active", active)
                 when (val result = client.patch("/api/accounts/${account.accountId}/permissions", body)) {
-                    is ApiResult.Success -> { message = "Permissões atualizadas."; onSaved(account.copy(active = active, permissions = permissions)) }
+                    is ApiResult.Success -> {
+                        message = "Permissões atualizadas."
+                        onSaved(account.copy(active = active, permissions = permissions))
+                    }
                     is ApiResult.Failure -> message = "Erro: ${result.message}"
                 }
                 saving = false
             }
-        }) { if (saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("Salvar alterações") }
+        }) {
+            if (saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            else Text("Salvar alterações")
+        }
     }
 }
 
