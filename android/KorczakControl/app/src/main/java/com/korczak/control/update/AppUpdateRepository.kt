@@ -15,8 +15,8 @@ object AppUpdateRepository {
     suspend fun check(currentVersion: String): AppUpdate? = withContext(Dispatchers.IO) {
         val connection = (URL(RELEASE_URL).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
+            connectTimeout = 10000
+            readTimeout = 15000
             setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("User-Agent", "Korczak-Control-Android/${Build.VERSION.SDK_INT}")
         }
@@ -24,19 +24,24 @@ object AppUpdateRepository {
             if (connection.responseCode !in 200..299) return@withContext null
             val release = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
             if (release.optBoolean("draft") || release.optBoolean("prerelease")) return@withContext null
+
             val version = release.optString("tag_name").removePrefix("v").trim()
             if (version.isBlank() || !isNewerVersion(version, currentVersion)) return@withContext null
+
             val assets = release.optJSONArray("assets") ?: return@withContext null
-            var downloadUrl = ""
-            for (index in 0 until assets.length()) {
-                val asset = assets.getJSONObject(index)
-                if (asset.optString("name").endsWith(".apk", true)) {
-                    downloadUrl = asset.optString("browser_download_url")
-                    break
-                }
-            }
+            val downloadUrl = (0 until assets.length()).asSequence()
+                .map { assets.getJSONObject(it) }
+                .firstOrNull { it.optString("name").endsWith(".apk", true) }
+                ?.optString("browser_download_url")
+                ?.trim()
+                .orEmpty()
+
             if (downloadUrl.isBlank()) return@withContext null
-            AppUpdate(version, release.optString("body", "Nova versão disponível."), downloadUrl)
+            AppUpdate(
+                version = version,
+                notes = release.optString("body", "Nova versão disponível.").trim(),
+                downloadUrl = downloadUrl
+            )
         } catch (_: Exception) {
             null
         } finally {
@@ -45,8 +50,8 @@ object AppUpdateRepository {
     }
 
     private fun isNewerVersion(candidate: String, current: String): Boolean {
-        val candidateParts = candidate.split(".").mapNotNull { it.toIntOrNull() }
-        val currentParts = current.split(".").mapNotNull { it.toIntOrNull() }
+        val candidateParts = candidate.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
+        val currentParts = current.removePrefix("v").split(".").mapNotNull { it.toIntOrNull() }
         val size = maxOf(candidateParts.size, currentParts.size)
         for (index in 0 until size) {
             val candidateValue = candidateParts.getOrElse(index) { 0 }
