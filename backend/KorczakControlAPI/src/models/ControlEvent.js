@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getDatabaseConnection } = require('../db');
 
 const controlEventSchema = new mongoose.Schema({
   category: { type: String, enum: ['deploy', 'service', 'database', 'security', 'system', 'resource'], default: 'system', index: true },
@@ -13,4 +14,14 @@ const controlEventSchema = new mongoose.Schema({
 }, { timestamps: true, collection: 'control_events' });
 controlEventSchema.index({ createdAt: -1 });
 
-module.exports = mongoose.models.ControlEvent || mongoose.model('ControlEvent', controlEventSchema);
+function getControlEventModel() {
+  const connection = getDatabaseConnection('KorczakControl');
+  if (!connection || connection.readyState !== 1) {
+    const error = new Error('KorczakControl database connection is unavailable.');
+    error.statusCode = 503;
+    throw error;
+  }
+  return connection.models.ControlEvent || connection.model('ControlEvent', controlEventSchema, 'control_events');
+}
+
+module.exports = getControlEventModel;
