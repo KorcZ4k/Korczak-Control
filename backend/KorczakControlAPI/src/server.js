@@ -7,6 +7,7 @@ const { loadConfig } = require('./config');
 const { connectDatabase, getDatabaseConnection } = require('./db');
 const { authRoutes } = require('./routes/auth');
 const { accountsRoutes } = require('./routes/accounts');
+const { auditRoutes } = require('./routes/audit');
 const { dashboardRoutes } = require('./routes/dashboard');
 const { resourcesRoutes } = require('./routes/resources');
 const { sitesRoutes } = require('./routes/sites');
@@ -68,6 +69,7 @@ app.get('/health', (req, res) => res.json({
 
 app.use('/api/auth', authRoutes(config));
 app.use('/api/accounts', accountsRoutes(config));
+app.use('/api/audit', auditRoutes(config));
 app.use('/api/dashboard', dashboardRoutes(config));
 app.use('/api/resources', resourcesRoutes(config));
 app.use('/api/sites', sitesRoutes(config));
