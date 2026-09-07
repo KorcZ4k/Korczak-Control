@@ -7,7 +7,7 @@ const { requireAuth } = require('../middleware/auth');
 const founderPermissions = {
   github: true,
   render: true,
-  mongodb: { KorczakControl: true, MoonTensura: true, KorczakTechSite: true },
+  mongodb: { KorczakControl: true, TensuraMoon: true, KorczakTechSite: true },
   bots: true,
   sites: true,
   applications: true,
@@ -18,7 +18,9 @@ function normalizedPermissions(user) {
   const permissions = user.permissions?.toObject ? user.permissions.toObject() : { ...(user.permissions || {}) };
   const mongodb = { ...(permissions.mongodb || {}) };
   if (mongodb.Admin && !mongodb.KorczakControl) mongodb.KorczakControl = true;
+  if (mongodb.MoonTensura && !mongodb.TensuraMoon) mongodb.TensuraMoon = true;
   delete mongodb.Admin;
+  delete mongodb.MoonTensura;
   return { ...permissions, mongodb };
 }
 
@@ -37,9 +39,13 @@ function safeUser(user) {
 }
 
 async function migrateLegacyPermissions(user) {
-  if (user.permissions?.mongodb?.Admin && !user.permissions.mongodb.KorczakControl) {
-    user.permissions.mongodb.KorczakControl = true;
-    user.permissions.mongodb.Admin = false;
+  const mongodb = user.permissions?.mongodb;
+  let changed = false;
+  if (mongodb?.Admin && !mongodb.KorczakControl) { mongodb.KorczakControl = true; changed = true; }
+  if (mongodb?.Admin) { mongodb.Admin = false; changed = true; }
+  if (mongodb?.MoonTensura && !mongodb.TensuraMoon) { mongodb.TensuraMoon = true; changed = true; }
+  if (mongodb?.MoonTensura) { mongodb.MoonTensura = false; changed = true; }
+  if (changed) {
     user.markModified('permissions');
     await user.save();
   }
@@ -80,28 +86,14 @@ function authRoutes(config) {
       const { email, password } = req.body || {};
       if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'Invalid credentials.' });
 
-      const user = await User.findOne({
-        email: email.trim().toLowerCase()
-      }).select('+passwordHash');
-
-      if (!user || !user.active || !(await bcrypt.compare(password, user.passwordHash))) {
-        return res.status(401).json({ error: 'Invalid credentials.' });
-      }
+      const user = await User.findOne({ email: email.trim().toLowerCase() }).select('+passwordHash');
+      if (!user || !user.active || !(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ error: 'Invalid credentials.' });
 
       await migrateLegacyPermissions(user);
       user.lastLoginAt = new Date();
       await user.save();
 
-      const token = jwt.sign(
-        {
-          sub: user._id.toString(),
-          accountId: user.accountId,
-          role: user.role
-        },
-        config.jwtSecret,
-        { expiresIn: '8h', issuer: 'korczak-control-api' }
-      );
-
+      const token = jwt.sign({ sub: user._id.toString(), accountId: user.accountId, role: user.role }, config.jwtSecret, { expiresIn: '8h', issuer: 'korczak-control-api' });
       return res.json({ token, user: safeUser(user) });
     } catch (error) { next(error); }
   });
