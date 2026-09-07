@@ -7,11 +7,6 @@ plugins {
 group = "com.korczak.control"
 version = "0.3.99"
 
-repositories {
-    google()
-    mavenCentral()
-}
-
 kotlin {
     jvmToolchain(17)
 }
