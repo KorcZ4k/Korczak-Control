@@ -1,36 +1,35 @@
 package com.korczak.control.desktop
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.launch
+import java.util.prefs.Preferences
 
 private data class Module(val id: String, val title: String, val description: String)
 
 private val modules = listOf(
-    Module("dashboard", "Painel", "Visão geral do sistema e serviços."),
-    Module("integrations", "Integrações", "GitHub, Render e serviços conectados."),
-    Module("organization", "Equipe", "Contas, acessos e organização."),
-    Module("github", "GitHub", "Repositórios, workflows e atividades."),
-    Module("render", "Render", "Serviços, implantações e status."),
-    Module("databases", "MongoDB", "Korczak Control, KZ Site e Moon."),
-    Module("bots", "Bots", "Bots e workflows vinculados."),
-    Module("apis", "APIs", "Serviços e endpoints disponíveis."),
-    Module("apps", "Apps", "Aplicações vinculadas ao controle."),
-    Module("sites", "Sites", "Sites e serviços publicados."),
-    Module("clients", "Clientes", "Clientes e orçamentos cadastrados."),
+    Module("dashboard", "Painel", "Visão geral operacional do sistema."),
+    Module("integrations", "Integrações", "Status dos serviços conectados."),
+    Module("databases", "MongoDB", "Bases de dados e conectividade."),
     Module("profile", "Perfil", "Informações da conta e sessão."),
-    Module("events", "Eventos", "Atividade recente do sistema."),
-    Module("settings", "Ajustes", "Configuração do aplicativo.")
+    Module("events", "Eventos", "Notificações e atividade recente."),
+    Module("settings", "Ajustes", "Configurações do aplicativo.")
 )
+
+private object DesktopSession {
+    private val preferences = Preferences.userRoot().node("com/korczak/control/desktop")
+    fun token(): String = preferences.get("token", "")
+    fun save(token: String) = preferences.put("token", token)
+    fun clear() = preferences.remove("token")
+}
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication, title = "Korczak Control") {
@@ -40,24 +39,130 @@ fun main() = application {
 
 @Composable
 private fun DesktopControlApp() {
-    var selected by remember { mutableStateOf(modules.first()) }
-    var health by remember { mutableStateOf<ApiHealth?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    var token by remember { mutableStateOf(DesktopSession.token()) }
+    var profile by remember { mutableStateOf<AccountProfile?>(null) }
+    var summary by remember { mutableStateOf<DashboardSummary?>(null) }
+    var loadingSession by remember { mutableStateOf(token.isNotBlank()) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun refresh() {
+    fun loadSession() {
+        if (token.isBlank()) return
         scope.launch {
-            loading = true
+            loadingSession = true
             error = null
-            runCatching { ControlApiClient.health() }
-                .onSuccess { health = it }
-                .onFailure { error = it.message ?: "Não foi possível conectar à API." }
-            loading = false
+            runCatching {
+                val account = ControlApiClient.me(token)
+                val dashboard = ControlApiClient.dashboard(token)
+                account to dashboard
+            }.onSuccess { (account, dashboard) ->
+                profile = account
+                summary = dashboard
+            }.onFailure {
+                if (it is ApiException && (it.message?.contains("Session", true) == true || it.message?.contains("token", true) == true)) {
+                    DesktopSession.clear()
+                    token = ""
+                    profile = null
+                    summary = null
+                }
+                error = it.message ?: "Não foi possível carregar a sessão."
+            }
+            loadingSession = false
         }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(token) { if (token.isNotBlank()) loadSession() }
+
+    if (token.isBlank()) {
+        LoginView(
+            error = error,
+            onLogin = { email, password ->
+                scope.launch {
+                    loadingSession = true
+                    error = null
+                    runCatching { ControlApiClient.login(email, password) }
+                        .onSuccess { session ->
+                            DesktopSession.save(session.token)
+                            token = session.token
+                            profile = session.profile
+                        }
+                        .onFailure { error = it.message ?: "Não foi possível iniciar a sessão." }
+                    loadingSession = false
+                }
+            },
+            loading = loadingSession
+        )
+    } else {
+        AuthenticatedShell(
+            profile = profile,
+            summary = summary,
+            error = error,
+            loading = loadingSession,
+            onRefresh = { loadSession() },
+            onLogout = {
+                DesktopSession.clear()
+                token = ""
+                profile = null
+                summary = null
+                error = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun LoginView(error: String?, onLogin: (String, String) -> Unit, loading: Boolean) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    Box(Modifier.fillMaxSize().padding(48.dp), contentAlignment = Alignment.Center) {
+        ElevatedCard(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
+            Column(Modifier.padding(36.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("KORCZAK CONTROL", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text("Acesso ao painel administrativo", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HorizontalDivider()
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("E-mail") },
+                    singleLine = true,
+                    enabled = !loading
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Senha") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    enabled = !loading
+                )
+                if (!error.isNullOrBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error)
+                }
+                Button(
+                    onClick = { onLogin(email.trim(), password) },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = email.isNotBlank() && password.isNotBlank() && !loading
+                ) {
+                    Text(if (loading) "Verificando acesso" else "Entrar")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuthenticatedShell(
+    profile: AccountProfile?,
+    summary: DashboardSummary?,
+    error: String?,
+    loading: Boolean,
+    onRefresh: () -> Unit,
+    onLogout: () -> Unit
+) {
+    var selected by remember { mutableStateOf(modules.first()) }
 
     Row(Modifier.fillMaxSize()) {
         NavigationRail(modifier = Modifier.fillMaxHeight().width(250.dp), header = {
@@ -67,16 +172,21 @@ private fun DesktopControlApp() {
                 Spacer(Modifier.height(24.dp))
             }
         }) {
-            LazyColumn {
-                items(modules) { module ->
-                    NavigationRailItem(
-                        selected = selected.id == module.id,
-                        onClick = { selected = module },
-                        icon = { Text("•") },
-                        label = { Text(module.title) }
-                    )
-                }
+            modules.forEach { module ->
+                NavigationRailItem(
+                    selected = selected.id == module.id,
+                    onClick = { selected = module },
+                    icon = { Text("•") },
+                    label = { Text(module.title) }
+                )
             }
+            Spacer(Modifier.weight(1f))
+            NavigationRailItem(
+                selected = false,
+                onClick = onLogout,
+                icon = { Text("↪") },
+                label = { Text("Sair") }
+            )
         }
 
         VerticalDivider()
@@ -88,61 +198,77 @@ private fun DesktopControlApp() {
                     Spacer(Modifier.height(6.dp))
                     Text(selected.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                FilledTonalButton(onClick = { refresh() }, enabled = !loading) {
-                    Text(if (loading) "Atualizando" else "Atualizar")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    profile?.let { Text(it.name.ifBlank { it.email }, style = MaterialTheme.typography.labelLarge) }
+                    FilledTonalButton(onClick = onRefresh, enabled = !loading) {
+                        Text(if (loading) "Atualizando" else "Atualizar")
+                    }
                 }
             }
 
-            if (error != null) {
+            if (!error.isNullOrBlank()) {
                 ElevatedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp)) {
-                        Text("Conexão indisponível", fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(6.dp))
-                        Text(error ?: "")
+                    Column(Modifier.padding(18.dp)) {
+                        Text("Atualização indisponível", fontWeight = FontWeight.Bold)
+                        Text(error)
                     }
                 }
             }
 
             when (selected.id) {
-                "dashboard" -> DashboardView(health, loading)
-                "databases" -> DatabaseView(health)
-                "integrations" -> IntegrationsView(health)
-                else -> PlaceholderView(selected, health)
+                "dashboard" -> DashboardView(summary, loading)
+                "integrations" -> IntegrationsView(summary)
+                "databases" -> DatabaseView(summary)
+                "profile" -> ProfileView(profile)
+                "events" -> EventsView(summary)
+                else -> SettingsView()
             }
         }
     }
 }
 
 @Composable
-private fun DashboardView(health: ApiHealth?, loading: Boolean) {
+private fun DashboardView(summary: DashboardSummary?, loading: Boolean) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(if (loading) "Verificando serviços" else health?.service ?: "Korczak Control", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(when {
-                    loading -> "Consultando a API principal."
-                    health?.status == "ok" -> "API conectada e respondendo normalmente."
-                    else -> "Status da API indisponível."
-                })
-                health?.let { Text("Versão ${it.version} • Ambiente ${it.environment}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Text("Resumo operacional", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(if (loading) "Consultando informações atualizadas." else "Dados carregados da API Korczak Control.")
             }
         }
-
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            StatusCard("API", health?.status == "ok")
-            StatusCard("GitHub", health?.github == true)
-            StatusCard("Render", health?.render == true)
+            MetricCard("Sites", summary?.sites ?: 0)
+            MetricCard("APIs", summary?.apis ?: 0)
+            MetricCard("Aplicações", summary?.apps ?: 0)
+            MetricCard("Serviços operacionais", summary?.online ?: 0)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            StatusCard("Requer atenção", summary?.attention ?: 0)
+            StatusCard("Indisponíveis", summary?.unavailable ?: 0)
+            StatusCard("Notificações", summary?.unread ?: 0)
         }
     }
 }
 
 @Composable
-private fun IntegrationsView(health: ApiHealth?) {
+private fun MetricCard(title: String, value: Int) {
+    ElevatedCard(Modifier.width(190.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, fontWeight = FontWeight.SemiBold)
+            Text(value.toString(), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(title: String, value: Int) = MetricCard(title, value)
+
+@Composable
+private fun IntegrationsView(summary: DashboardSummary?) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        IntegrationRow("GitHub", health?.github == true)
-        IntegrationRow("Render", health?.render == true)
-        IntegrationRow("KZ Site API", health?.kzSiteApi == true)
-        IntegrationRow("Korczak Control API", health?.kzControlApi == true)
+        IntegrationRow("GitHub", summary?.github == true)
+        IntegrationRow("Render", summary?.render == true)
+        IntegrationRow("MongoDB", summary?.mongodb == true)
     }
 }
 
@@ -157,23 +283,14 @@ private fun IntegrationRow(name: String, connected: Boolean) {
 }
 
 @Composable
-private fun StatusCard(title: String, online: Boolean) {
-    ElevatedCard(Modifier.width(190.dp)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, fontWeight = FontWeight.SemiBold)
-            Text(if (online) "Operacional" else "Indisponível", color = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun DatabaseView(health: ApiHealth?) {
+private fun DatabaseView(summary: DashboardSummary?) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Bases de dados", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text("Bases configuradas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(if (summary?.mongodb == true) "A integração MongoDB está conectada à API." else "A integração MongoDB não está disponível.")
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            DatabaseCard("Korczak Control", "KorczakControl", health?.adminDatabase == true)
-            DatabaseCard("KZ Site", "KorczakTechSite", health?.kzSiteDatabase == true)
-            DatabaseCard("Moon", "TensuraMoon", health?.moonDatabase == true)
+            DatabaseCard("Korczak Control", "KorczakControl", summary?.mongodb == true)
+            DatabaseCard("KZ Site", "KorczakTechSite", summary?.mongodb == true)
+            DatabaseCard("Moon", "TensuraMoon", summary?.mongodb == true)
         }
     }
 }
@@ -190,12 +307,42 @@ private fun DatabaseCard(title: String, database: String, connected: Boolean) {
 }
 
 @Composable
-private fun PlaceholderView(module: Module, health: ApiHealth?) {
+private fun ProfileView(profile: AccountProfile?) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(profile?.name ?: "Conta", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            ProfileField("E-mail", profile?.email)
+            ProfileField("Função", profile?.role)
+            ProfileField("Departamento", profile?.department)
+            ProfileField("ID da conta", profile?.accountId)
+        }
+    }
+}
+
+@Composable
+private fun ProfileField(label: String, value: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value?.ifBlank { "Não informado" } ?: "Não informado")
+    }
+}
+
+@Composable
+private fun EventsView(summary: DashboardSummary?) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${module.title}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text("Este módulo está integrado à estrutura desktop do Korczak Control. A próxima implementação conectará seus dados específicos aos endpoints correspondentes da API.")
-            if (health?.status == "ok") Text("A conexão com a API principal está ativa.", color = MaterialTheme.colorScheme.primary)
+            Text("Notificações pendentes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("${summary?.unread ?: 0} notificações aguardam leitura.")
+        }
+    }
+}
+
+@Composable
+private fun SettingsView() {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Configuração", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("O endereço da API pode ser definido pela variável CONTROL_API_URL antes da inicialização do aplicativo.")
         }
     }
 }
