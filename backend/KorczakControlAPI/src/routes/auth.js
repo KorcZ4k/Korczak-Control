@@ -32,9 +32,16 @@ function safeUser(user) {
     email: user.email,
     role: user.role,
     department: user.department,
+    managerAccountId: user.managerAccountId || '',
     permissions: normalizedPermissions(user),
-    resourcePermissions: user.resourcePermissions,
-    active: user.active
+    resourcePermissions: user.resourcePermissions || [],
+    active: user.active,
+    lastLoginAt: user.lastLoginAt || null,
+    passwordChangedAt: user.passwordChangedAt || null,
+    mustChangePassword: Boolean(user.mustChangePassword),
+    photoUrl: user.photoUrl || '',
+    createdAt: user.createdAt || null,
+    updatedAt: user.updatedAt || null
   };
 }
 
@@ -74,7 +81,8 @@ function authRoutes(config) {
         passwordHash: await bcrypt.hash(password, 12),
         role: isFounder ? 'FOUNDER' : 'VIEWER',
         department: isFounder ? 'Korczak Technologies' : '',
-        permissions: isFounder ? founderPermissions : {}
+        permissions: isFounder ? founderPermissions : {},
+        passwordChangedAt: new Date()
       });
       return res.status(201).json({ user: safeUser(user) });
     } catch (error) { next(error); }
