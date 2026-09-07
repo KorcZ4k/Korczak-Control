@@ -4,7 +4,7 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const { loadConfig } = require('./config');
-const { connectDatabase } = require('./db');
+const { connectDatabase, getDatabaseConnection } = require('./db');
 const { authRoutes } = require('./routes/auth');
 const { accountsRoutes } = require('./routes/accounts');
 const { dashboardRoutes } = require('./routes/dashboard');
@@ -16,6 +16,7 @@ const { databasesRoutes } = require('./routes/databases');
 const { managedResourcesRoutes } = require('./routes/managedResources');
 const { eventsRoutes } = require('./routes/events');
 const { integrationsRoutes } = require('./routes/integrations');
+
 const config = loadConfig();
 const app = express();
 const startedAt = Date.now();
@@ -35,9 +36,14 @@ app.use(cors({
     if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
     return cb(new Error('Origin not allowed by CORS.'));
   },
-  methods: ['GET', 'POST', 'PATCH'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-bootstrap-token']
 }));
+
+function databaseStatus(key, uri) {
+  const connection = getDatabaseConnection(key);
+  return { configured: Boolean(uri), connected: Boolean(connection && connection.readyState === 1) };
+}
 
 app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
 app.get('/health', (req, res) => res.json({
@@ -46,9 +52,9 @@ app.get('/health', (req, res) => res.json({
   version: config.version,
   environment: config.environment,
   databases: {
-    KorczakControl: Boolean(config.adminDbUri),
-    TensuraMoon: Boolean(config.tensuraDbUri),
-    KorczakTechSite: Boolean(config.kzSiteDbUri)
+    KorczakControl: databaseStatus('KorczakControl', config.adminDbUri),
+    TensuraMoon: databaseStatus('TensuraMoon', config.tensuraDbUri),
+    KorczakTechSite: databaseStatus('KorczakTechSite', config.kzSiteDbUri)
   },
   integrations: {
     github: Boolean(config.githubToken),
@@ -76,23 +82,33 @@ app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestI
 app.use((error, req, res, next) => {
   console.error({ requestId: req.requestId, error: error.message, stack: error.stack });
   const status = error.statusCode || (error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500);
-  res.status(status).json({
-    error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message,
-    requestId: req.requestId
-  });
+  res.status(status).json({ error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message, requestId: req.requestId });
 });
 
 let server;
+async function connectOptionalDatabase(key, uri, name) {
+  if (!uri) {
+    console.warn(`MongoDB not configured: ${key}.`);
+    return;
+  }
+  try {
+    await connectDatabase(key, uri, name);
+  } catch (error) {
+    console.error(`MongoDB connection failed for ${key}:`, error.message);
+  }
+}
+
 async function start() {
+  await connectOptionalDatabase('KorczakControl', config.adminDbUri, config.adminDbName);
   await Promise.all([
-    connectDatabase('KorczakControl', config.adminDbUri, config.adminDbName),
-    connectDatabase('KorczakTechSite', config.kzSiteDbUri, config.kzSiteDbName),
-    connectDatabase('TensuraMoon', config.tensuraDbUri, config.tensuraDbName)
+    connectOptionalDatabase('KorczakTechSite', config.kzSiteDbUri, config.kzSiteDbName),
+    connectOptionalDatabase('TensuraMoon', config.tensuraDbUri, config.tensuraDbName)
   ]);
 
-  server = app.listen(config.port, () => {
-    console.log(`Korczak Control API running on port ${config.port}`);
-  });
+  const adminConnection = getDatabaseConnection('KorczakControl');
+  if (!adminConnection || adminConnection.readyState !== 1) throw new Error('KorczakControl database is required and could not be connected.');
+
+  server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`));
 }
 
 function shutdown(signal) {
@@ -103,7 +119,4 @@ function shutdown(signal) {
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
-start().catch((error) => {
-  console.error('Failed to start API:', error);
-  process.exit(1);
-});
+start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
