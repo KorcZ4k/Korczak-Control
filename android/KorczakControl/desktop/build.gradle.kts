@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.korczak.control"
-version = "0.3.99"
+version = "1.0.0"
 
 kotlin {
     jvmToolchain(17)
@@ -27,7 +27,7 @@ compose.desktop {
                 org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
             )
             packageName = "KorczakControl"
-            packageVersion = "0.3.99"
+            packageVersion = "1.0.0"
         }
     }
 }
