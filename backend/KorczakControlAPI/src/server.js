@@ -15,110 +15,29 @@ const { githubRoutes } = require('./routes/github');
 const { renderRoutes } = require('./routes/render');
 const { databasesRoutes } = require('./routes/databases');
 const { managedResourcesRoutes } = require('./routes/managedResources');
+const { customersRoutes } = require('./routes/customers');
+const { applicationsRoutes } = require('./routes/applications');
+const { botsRoutes } = require('./routes/bots');
 const { eventsRoutes } = require('./routes/events');
 const { integrationsRoutes } = require('./routes/integrations');
 
 const config = loadConfig();
 const app = express();
 const startedAt = Date.now();
-
 app.disable('x-powered-by');
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json({ limit: '256kb' }));
-app.use((req, res, next) => {
-  req.requestId = crypto.randomUUID();
-  res.setHeader('X-Request-Id', req.requestId);
-  next();
-});
-
+app.use((req, res, next) => { req.requestId = crypto.randomUUID(); res.setHeader('X-Request-Id', req.requestId); next(); });
 const allowedOrigins = config.corsOrigin.split(',').map((v) => v.trim()).filter(Boolean);
-app.use(cors({
-  origin(origin, cb) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(new Error('Origin not allowed by CORS.'));
-  },
-  methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-bootstrap-token']
-}));
-
-function databaseStatus(key, uri) {
-  const connection = getDatabaseConnection(key);
-  return { configured: Boolean(uri), connected: Boolean(connection && connection.readyState === 1) };
-}
-
+app.use(cors({ origin(origin, cb) { if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return cb(null, true); return cb(new Error('Origin not allowed by CORS.')); }, methods: ['GET', 'POST', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization', 'x-bootstrap-token'] }));
+function databaseStatus(key, uri) { const connection = getDatabaseConnection(key); return { configured: Boolean(uri), connected: Boolean(connection && connection.readyState === 1) }; }
 app.get('/', (req, res) => res.json({ service: 'Korczak Control API', status: 'online', version: config.version }));
-app.get('/health', (req, res) => res.json({
-  status: 'ok',
-  service: config.serviceName,
-  version: config.version,
-  environment: config.environment,
-  databases: {
-    KorczakControl: databaseStatus('KorczakControl', config.adminDbUri),
-    TensuraMoon: databaseStatus('TensuraMoon', config.tensuraDbUri),
-    KorczakTechSite: databaseStatus('KorczakTechSite', config.kzSiteDbUri)
-  },
-  integrations: {
-    github: Boolean(config.githubToken),
-    render: Boolean(config.renderApiKey),
-    kzSiteApi: Boolean(config.kzSiteApi),
-    kzControlApi: Boolean(config.kzControlApi)
-  },
-  uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
-  timestamp: new Date().toISOString()
-}));
-
-app.use('/api/auth', authRoutes(config));
-app.use('/api/accounts', accountsRoutes(config));
-app.use('/api/audit', auditRoutes(config));
-app.use('/api/dashboard', dashboardRoutes(config));
-app.use('/api/resources', resourcesRoutes(config));
-app.use('/api/sites', sitesRoutes(config));
-app.use('/api/github', githubRoutes(config));
-app.use('/api/render', renderRoutes(config));
-app.use('/api/databases', databasesRoutes(config));
-app.use('/api/managed', managedResourcesRoutes(config));
-app.use('/api/events', eventsRoutes(config));
-app.use('/api/integrations', integrationsRoutes(config));
-
+app.get('/health', (req, res) => res.json({ status: 'ok', service: config.serviceName, version: config.version, environment: config.environment, databases: { KorczakControl: databaseStatus('KorczakControl', config.adminDbUri), TensuraMoon: databaseStatus('TensuraMoon', config.tensuraDbUri), KorczakTechSite: databaseStatus('KorczakTechSite', config.kzSiteDbUri) }, integrations: { github: Boolean(config.githubToken), render: Boolean(config.renderApiKey), kzSiteApi: Boolean(config.kzSiteApi), kzControlApi: Boolean(config.kzControlApi) }, uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000), timestamp: new Date().toISOString() }));
+app.use('/api/auth', authRoutes(config)); app.use('/api/accounts', accountsRoutes(config)); app.use('/api/audit', auditRoutes(config)); app.use('/api/dashboard', dashboardRoutes(config)); app.use('/api/resources', resourcesRoutes(config)); app.use('/api/sites', sitesRoutes(config)); app.use('/api/github', githubRoutes(config)); app.use('/api/render', renderRoutes(config)); app.use('/api/databases', databasesRoutes(config)); app.use('/api/managed', managedResourcesRoutes(config)); app.use('/api/customers', customersRoutes(config)); app.use('/api/applications', applicationsRoutes(config)); app.use('/api/bots', botsRoutes(config)); app.use('/api/events', eventsRoutes(config)); app.use('/api/integrations', integrationsRoutes(config));
 app.use((req, res) => res.status(404).json({ error: 'Route not found.', requestId: req.requestId }));
-app.use((error, req, res, next) => {
-  console.error({ requestId: req.requestId, error: error.message, stack: error.stack });
-  const status = error.statusCode || (error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500);
-  res.status(status).json({ error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message, requestId: req.requestId });
-});
-
+app.use((error, req, res, next) => { console.error({ requestId: req.requestId, error: error.message, stack: error.stack }); const status = error.statusCode || (error.name === 'MongoServerError' && error.code === 11000 ? 409 : 500); res.status(status).json({ error: status === 409 ? 'Resource already exists.' : status >= 500 ? 'Internal server error.' : error.message, requestId: req.requestId }); });
 let server;
-async function connectOptionalDatabase(key, uri, name) {
-  if (!uri) {
-    console.warn(`MongoDB not configured: ${key}.`);
-    return;
-  }
-  try {
-    await connectDatabase(key, uri, name);
-  } catch (error) {
-    console.error(`MongoDB connection failed for ${key}:`, error.message);
-  }
-}
-
-async function start() {
-  await connectOptionalDatabase('KorczakControl', config.adminDbUri, config.adminDbName);
-  await Promise.all([
-    connectOptionalDatabase('KorczakTechSite', config.kzSiteDbUri, config.kzSiteDbName),
-    connectOptionalDatabase('TensuraMoon', config.tensuraDbUri, config.tensuraDbName)
-  ]);
-
-  const adminConnection = getDatabaseConnection('KorczakControl');
-  if (!adminConnection || adminConnection.readyState !== 1) throw new Error('KorczakControl database is required and could not be connected.');
-
-  server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`));
-}
-
-function shutdown(signal) {
-  console.log(`${signal} received. Closing server.`);
-  if (!server) return process.exit(0);
-  server.close((error) => process.exit(error ? 1 : 0));
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
+async function connectOptionalDatabase(key, uri, name) { if (!uri) { console.warn(`MongoDB not configured: ${key}.`); return; } try { await connectDatabase(key, uri, name); } catch (error) { console.error(`MongoDB connection failed for ${key}:`, error.message); } }
+async function start() { await connectOptionalDatabase('KorczakControl', config.adminDbUri, config.adminDbName); await Promise.all([connectOptionalDatabase('KorczakTechSite', config.kzSiteDbUri, config.kzSiteDbName), connectOptionalDatabase('TensuraMoon', config.tensuraDbUri, config.tensuraDbName)]); const adminConnection = getDatabaseConnection('KorczakControl'); if (!adminConnection || adminConnection.readyState !== 1) throw new Error('KorczakControl database is required and could not be connected.'); server = app.listen(config.port, () => console.log(`Korczak Control API running on port ${config.port}`)); }
+function shutdown(signal) { console.log(`${signal} received. Closing server.`); if (!server) return process.exit(0); server.close((error) => process.exit(error ? 1 : 0)); }
+process.on('SIGTERM', () => shutdown('SIGTERM')); process.on('SIGINT', () => shutdown('SIGINT')); start().catch((error) => { console.error('Failed to start API:', error); process.exit(1); });
