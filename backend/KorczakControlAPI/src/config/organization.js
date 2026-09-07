@@ -13,11 +13,11 @@ const ROLES = Object.freeze({
   MOON_ADMIN: { department: DEPARTMENTS.MOON_ROLEPLAYING, rank: 40, manages: true },
   MOON_MODERATOR: { department: DEPARTMENTS.MOON_ROLEPLAYING, rank: 30, manages: false },
   MOON_HELPER: { department: DEPARTMENTS.MOON_ROLEPLAYING, rank: 20, manages: false },
-  // Legacy roles retained for existing accounts.
   ADMINISTRATOR: { department: DEPARTMENTS.KORCZAK_TECHNOLOGIES, rank: 60, manages: true },
   DEPARTMENT_MANAGER: { department: DEPARTMENTS.KORCZAK_TECHNOLOGIES, rank: 60, manages: true },
   DEVELOPER: { department: DEPARTMENTS.KORCZAK_TECHNOLOGIES, rank: 20, manages: false },
   STAFF: { department: DEPARTMENTS.KORCZAK_TECHNOLOGIES, rank: 20, manages: false },
+  EMPLOYEE: { department: DEPARTMENTS.KORCZAK_TECHNOLOGIES, rank: 20, manages: false },
   VIEWER: { department: '', rank: 0, manages: false }
 });
 
