@@ -1,7 +1,5 @@
 package com.korczak.control.modules
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,11 +20,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private data class MongoTarget(val label: String, val database: String)
-private val mongoTargets = listOf(
-    MongoTarget("Korczak Control", "KorczakControl"),
-    MongoTarget("KZ Site", "KorczakTechSite"),
-    MongoTarget("Moon", "TensuraMoon")
-)
+private val mongoTargets = listOf(MongoTarget("Korczak Control", "KorczakControl"), MongoTarget("KZ Site", "KorczakTechSite"), MongoTarget("Moon", "TensuraMoon"))
 
 @Composable
 fun OperationsScreen(section: String) {
@@ -34,273 +28,69 @@ fun OperationsScreen(section: String) {
     val client = remember { ApiClient(SessionManager(context)) }
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var renderServices by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var mongoTarget by remember { mutableStateOf<MongoTarget?>(null) }
-    var collections by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var items by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var databases by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var selectedDatabase by remember { mutableStateOf<MongoTarget?>(null) }
     var selectedCollection by remember { mutableStateOf<String?>(null) }
     var documents by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var sites by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var profile by remember { mutableStateOf<JSONObject?>(null) }
+    var repository by remember { mutableStateOf("") }
     var workflows by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var workflowRepository by remember { mutableStateOf("") }
 
-    suspend fun get(path: String): String? {
-        loading = true
-        message = null
-        val result = client.get(path)
+    suspend fun request(path: String, action: String = "GET", body: JSONObject? = null): String? {
+        loading = true; error = null
+        val result = when (action) { "POST" -> client.post(path, body ?: JSONObject()); "PATCH" -> client.patch(path, body ?: JSONObject()); "DELETE" -> client.delete(path); else -> client.get(path) }
         loading = false
-        return when (result) {
-            is ApiResult.Success -> result.body
-            is ApiResult.Failure -> { message = result.message; null }
-        }
+        return when (result) { is ApiResult.Success -> result.body; is ApiResult.Failure -> { error = result.message; null } }
     }
-
-    suspend fun loadRender() {
-        val body = get("/api/render/services") ?: return
-        renderServices = runCatching {
-            val array = JSONObject(body).optJSONArray("items") ?: JSONArray()
-            List(array.length()) { array.getJSONObject(it) }
-        }.getOrElse { message = "Não foi possível interpretar os serviços do Render."; emptyList() }
+    fun parseItems(body: String): List<JSONObject> = runCatching { val array = JSONObject(body).optJSONArray("items") ?: JSONArray(); List(array.length()) { array.optJSONObject(it) ?: JSONObject() } }.getOrDefault(emptyList())
+    suspend fun loadMain() {
+        val path = when(section) { "clients" -> "/api/customers"; "apps" -> "/api/applications"; "bots" -> "/api/bots"; "sites" -> "/api/sites"; "apis" -> "/api/managed/api"; else -> "" }
+        if (path.isNotBlank()) request(path)?.let { items = parseItems(it) }
     }
+    suspend fun loadCollections(target: MongoTarget) { selectedDatabase = target; selectedCollection = null; documents = emptyList(); request("/api/databases/${target.database}/collections")?.let { items = parseItems(it) } }
+    suspend fun loadDocuments(name: String) { val target = selectedDatabase ?: return; selectedCollection = name; request("/api/databases/${target.database}/collections/$name/documents?limit=100")?.let { documents = parseItems(it) } }
+    suspend fun loadGithub() { val body = request("/api/bots/tensura-moon/workflows") ?: return; val json = JSONObject(body); repository = json.optString("repository"); val array = json.optJSONArray("workflows") ?: JSONArray(); workflows = List(array.length()) { array.getJSONObject(it) } }
 
-    suspend fun loadCollections(target: MongoTarget) {
-        mongoTarget = target
-        selectedCollection = null
-        documents = emptyList()
-        val body = get("/api/databases/${target.database}/collections") ?: return
-        collections = runCatching {
-            val array = JSONObject(body).optJSONArray("items") ?: JSONArray()
-            List(array.length()) { array.getJSONObject(it) }
-        }.getOrElse { message = "Não foi possível carregar as collections."; emptyList() }
-    }
-
-    suspend fun loadDocuments(name: String) {
-        val target = mongoTarget ?: return
-        selectedCollection = name
-        val body = get("/api/databases/${target.database}/collections/$name/documents?limit=50") ?: return
-        documents = runCatching {
-            val array = JSONObject(body).optJSONArray("items") ?: JSONArray()
-            List(array.length()) { array.getJSONObject(it) }
-        }.getOrElse { message = "Não foi possível carregar os documentos."; emptyList() }
-    }
-
-    suspend fun createCollection(name: String) {
-        val target = mongoTarget ?: return
-        loading = true
-        message = null
-        when (val result = client.post("/api/databases/${target.database}/collections", JSONObject().put("name", name))) {
-            is ApiResult.Success -> loadCollections(target)
-            is ApiResult.Failure -> { loading = false; message = result.message }
-        }
-    }
-
-    suspend fun loadSites() {
-        val body = get("/api/sites") ?: return
-        sites = runCatching {
-            val array = JSONObject(body).optJSONArray("items") ?: JSONArray()
-            List(array.length()) { array.getJSONObject(it) }
-        }.getOrElse { message = "Não foi possível carregar os sites."; emptyList() }
-    }
-
-    suspend fun loadProfile() {
-        val body = get("/api/accounts/me") ?: return
-        profile = runCatching { JSONObject(body).optJSONObject("account") }.getOrElse {
-            message = "Não foi possível carregar as informações da conta."
-            null
-        }
-    }
-
-    suspend fun loadWorkflows() {
-        val body = get("/api/github/bots/tensura-moon/workflows") ?: return
-        val json = JSONObject(body)
-        workflowRepository = json.optString("repository")
-        workflows = runCatching {
-            val array = json.optJSONArray("workflows") ?: JSONArray()
-            List(array.length()) { array.getJSONObject(it) }
-        }.getOrElse { message = "Não foi possível carregar os workflows do Tensura Moon."; emptyList() }
-    }
-
-    suspend fun runWorkflow(workflow: JSONObject) {
-        val repo = workflowRepository.split('/').filter { it.isNotBlank() }
-        val id = workflow.optString("id")
-        if (repo.size != 2 || id.isBlank()) {
-            message = "Não foi possível identificar o repositório ou o workflow."
-            return
-        }
-        loading = true
-        message = null
-        when (val result = client.post("/api/github/repos/${repo[0]}/${repo[1]}/workflows/$id/dispatch", JSONObject().put("ref", "main"))) {
-            is ApiResult.Success -> message = "Execução solicitada ao GitHub Actions."
-            is ApiResult.Failure -> message = result.message
-        }
-        loading = false
-    }
-
-    LaunchedEffect(section) {
-        when (section) {
-            "render" -> loadRender()
-            "sites" -> loadSites()
-            "profile" -> loadProfile()
-            "bots" -> loadWorkflows()
-        }
-    }
-
+    LaunchedEffect(section) { when(section) { "databases" -> request("/api/databases")?.let { databases = parseItems(it) }; "github" -> loadGithub(); else -> loadMain() } }
     Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Header(section, loading)
-        message?.let { MessageCard(it) }
-        when (section) {
-            "render" -> RenderModule(renderServices) { scope.launch { loadRender() } }
-            "databases" -> MongoModule(mongoTarget, collections, selectedCollection, documents,
-                onDatabase = { scope.launch { loadCollections(it) } },
-                onCollection = { scope.launch { loadDocuments(it) } },
-                onCreateCollection = { scope.launch { createCollection(it) } })
-            "bots" -> BotModule(workflows, workflowRepository, onRefresh = { scope.launch { loadWorkflows() } }, onRun = { scope.launch { runWorkflow(it) } })
-            "sites" -> SitesModule(sites) { scope.launch { loadSites() } }
-            "profile" -> ProfileModule(profile) { scope.launch { loadProfile() } }
-            "github" -> SimpleModule("GitHub", "Repositório e automações", listOf("Abrir repositório")) {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/KorcZ4k/Korczak-Control")))
-            }
-            else -> SimpleModule("Módulo em desenvolvimento", "Esta área será vinculada ao serviço correspondente do Korczak Control.", emptyList()) {}
+        error?.let { ErrorCard(it) { scope.launch { when(section) { "github" -> loadGithub(); "databases" -> selectedDatabase?.let { loadCollections(it) } ?: request("/api/databases")?.let { databases = parseItems(it) }; else -> loadMain() } } }
+        when(section) {
+            "databases" -> MongoModule(selectedDatabase, selectedCollection, items, documents, onSelectDatabase = { scope.launch { loadCollections(it) } }, onSelectCollection = { scope.launch { loadDocuments(it) } }, onCreateCollection = { name -> scope.launch { selectedDatabase?.let { target -> request("/api/databases/${target.database}/collections", "POST", JSONObject().put("name", name)); loadCollections(target) } } })
+            "clients" -> ResourceModule("Clientes", "Nome e ID são obrigatórios. Os demais campos permanecem opcionais.", items, listOf("Nome", "ID", "E-mail", "Telefone", "Status", "Serviço", "Observações"), onRefresh = { scope.launch { loadMain() } }, onCreate = { data -> scope.launch { request("/api/customers", "POST", JSONObject().put("name", data["Nome"]).put("externalId", data["ID"]).put("email", data["E-mail"]).put("phone", data["Telefone"]).put("status", data["Status"].ifBlank { "active" }).put("service", data["Serviço"]).put("notes", data["Observações"])); loadMain() } }, onDelete = { item -> scope.launch { request("/api/customers/${item.optString("_id")}", "DELETE"); loadMain() } })
+            "apps" -> ResourceModule("Aplicações", "Registre cada aplicação com seus vínculos reais.", items, listOf("Nome", "Identificador", "Versão", "Plataformas", "Repositório", "API", "Site", "Banco", "Status", "Observações"), onRefresh = { scope.launch { loadMain() } }, onCreate = { d -> scope.launch { request("/api/applications", "POST", JSONObject().put("name", d["Nome"]).put("slug", slug(d["Identificador"].ifBlank { d["Nome"] })).put("version", d["Versão"]).put("platforms", JSONArray(d["Plataformas"].split(',').map { it.trim() }.filter { it.isNotBlank() })).put("repository", d["Repositório"]).put("apiUrl", d["API"]).put("siteUrl", d["Site"]).put("databaseKey", d["Banco"]).put("status", d["Status"].ifBlank { "unknown" }).put("notes", d["Observações"])); loadMain() } }, onDelete = { item -> scope.launch { request("/api/applications/${item.optString("slug")}", "DELETE"); loadMain() } })
+            "bots" -> BotsModule(items, onRefresh = { scope.launch { loadMain() } }, onWorkflows = { bot -> scope.launch { val body = request("/api/bots/${bot.optString("slug")}/workflows") ?: return@launch; val json = JSONObject(body); repository = json.optString("repository"); val array = json.optJSONArray("workflows") ?: JSONArray(); workflows = List(array.length()) { array.getJSONObject(it) } } }, workflows = workflows, repository = repository, onRun = { wf -> scope.launch { val parts = repository.split('/'); if (parts.size == 2) request("/api/github/repos/${parts[0]}/${parts[1]}/workflows/${wf.optString("id")}/dispatch", "POST", JSONObject().put("ref", "main")) } })
+            "github" -> GithubModule(repository, workflows, onRefresh = { scope.launch { loadGithub() } }, onRun = { wf -> scope.launch { val parts = repository.split('/'); if (parts.size == 2) request("/api/github/repos/${parts[0]}/${parts[1]}/workflows/${wf.optString("id")}/dispatch", "POST", JSONObject().put("ref", "main")) } })
+            "sites" -> ResourceModule("Sites", "Registre URLs reais e acompanhe sua disponibilidade.", items, listOf("Nome", "Identificador", "URL", "Repositório", "Tecnologia", "Status", "Observações"), onRefresh = { scope.launch { loadMain() } }, onCreate = { d -> scope.launch { request("/api/sites", "POST", JSONObject().put("name", d["Nome"]).put("slug", slug(d["Identificador"].ifBlank { d["Nome"] })).put("url", d["URL"]).put("repository", d["Repositório"]).put("technology", d["Tecnologia"]).put("status", d["Status"].ifBlank { "unknown" }).put("notes", d["Observações"])); loadMain() } }, onDelete = null)
+            "apis" -> ResourceModule("APIs", "Centralize as APIs e seus vínculos de projeto.", items, listOf("Nome", "Identificador", "URL", "Repositório", "Tecnologia", "Versão", "Status", "Observações"), onRefresh = { scope.launch { loadMain() } }, onCreate = { d -> scope.launch { request("/api/managed/api", "POST", JSONObject().put("name", d["Nome"]).put("slug", slug(d["Identificador"].ifBlank { d["Nome"] })).put("url", d["URL"]).put("repository", d["Repositório"]).put("technology", d["Tecnologia"]).put("version", d["Versão"]).put("status", d["Status"].ifBlank { "unknown" }).put("notes", d["Observações"])); loadMain() } }, onDelete = null)
+            else -> InfoCard("Este módulo será carregado pelo serviço correspondente.")
         }
     }
 }
 
-@Composable private fun Header(section: String, loading: Boolean) {
-    val title = mapOf("render" to "Render", "databases" to "MongoDB", "bots" to "Bots", "sites" to "Sites", "profile" to "Perfil", "github" to "GitHub")[section] ?: section
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-            Text("Central operacional", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        }
-        if (loading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-    }
+@Composable private fun Header(section: String, loading: Boolean) { val title = mapOf("databases" to "MongoDB", "clients" to "Clientes", "apps" to "Aplicações", "bots" to "Bots", "github" to "GitHub e Workflows", "sites" to "Sites", "apis" to "APIs")[section] ?: section; Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(title.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold); Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }; if (loading) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) } }
+
+@Composable private fun MongoModule(target: MongoTarget?, selected: String?, collections: List<JSONObject>, documents: List<JSONObject>, onSelectDatabase: (MongoTarget) -> Unit, onSelectCollection: (String) -> Unit, onCreateCollection: (String) -> Unit) {
+    if (target == null) { Text("Selecione o banco", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); mongoTargets.forEach { db -> ElevatedCard(onClick = { onSelectDatabase(db) }, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Storage, null); Spacer(Modifier.width(12.dp)); Column { Text(db.label, fontWeight = FontWeight.Bold); Text(db.database, color = MaterialTheme.colorScheme.onSurfaceVariant) } } } } }
+    else if (selected == null) { var name by remember(target.database) { mutableStateOf("") }; Text(target.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); OutlinedTextField(name, { name = it }, label = { Text("Nova collection") }, modifier = Modifier.fillMaxWidth(), singleLine = true); Button(onClick = { if (name.isNotBlank()) { onCreateCollection(name.trim()); name = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Criar collection") }; if (collections.isEmpty()) InfoCard("Nenhuma collection encontrada.") else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) { items(collections, key = { it.optString("name") }) { item -> ElevatedCard(onClick = { onSelectCollection(item.optString("name")) }, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.TableChart, null); Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) { Text(item.optString("name"), fontWeight = FontWeight.Bold); Text("${item.optLong("estimatedDocumentCount")} documentos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Icon(Icons.Default.ChevronRight, null) } } } } }
+    else { Text(selected, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); if (documents.isEmpty()) InfoCard("Nenhum documento encontrado.") else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(documents, key = { it.optString("_id", it.hashCode().toString()) }) { item -> ElevatedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { DetailRows(item) } } } } }
 }
 
-@Composable private fun MessageCard(text: String) {
-    Card { Text(text, Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+@Composable private fun ResourceModule(title: String, description: String, items: List<JSONObject>, fields: List<String>, onRefresh: () -> Unit, onCreate: (Map<String,String>) -> Unit, onDelete: ((JSONObject) -> Unit)?) {
+    var creating by remember { mutableStateOf(false) }; var values by remember { mutableStateOf(fields.associateWith { "" }) }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(description, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant); Row { IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Atualizar") }; IconButton(onClick = { values = fields.associateWith { "" }; creating = true }) { Icon(Icons.Default.Add, "Adicionar") } } }
+    if (creating) ElevatedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("Adicionar $title", fontWeight = FontWeight.Bold); fields.forEach { field -> OutlinedTextField(values[field].orEmpty(), { values = values.toMutableMap().apply { put(field, it) } }, label = { Text(field) }, modifier = Modifier.fillMaxWidth()) }; Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { onCreate(values); creating = false }) { Text("Salvar") }; TextButton(onClick = { creating = false }) { Text("Cancelar") } } } }
+    if (items.isEmpty()) InfoCard("Nenhum registro encontrado.") else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(items, key = { it.optString("_id", it.optString("slug", it.optString("name"))) }) { item -> ElevatedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(item.optString("name", title.dropLast(1)), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); DetailRows(item, setOf("_id", "name", "history", "createdAt", "updatedAt")); onDelete?.let { remove -> TextButton(onClick = { remove(item) }) { Icon(Icons.Default.Delete, null); Spacer(Modifier.width(6.dp)); Text("Excluir") } } } } } }
 }
 
-@Composable private fun RenderModule(services: List<JSONObject>, refresh: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-        TextButton(onClick = refresh) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Atualizar") }
-    }
-    if (services.isEmpty()) InfoCard("Nenhum serviço foi retornado pelo Render. Verifique a configuração da integração no servidor.")
-    else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(services, key = { it.optString("id", it.optString("name")) }) { service ->
-            ElevatedCard {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(service.optString("name", "Serviço Render"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    DetailRows(service, excluded = setOf("id", "name"))
-                }
-            }
-        }
-    }
-}
+@Composable private fun BotsModule(items: List<JSONObject>, onRefresh: () -> Unit, onWorkflows: (JSONObject) -> Unit, workflows: List<JSONObject>, repository: String, onRun: (JSONObject) -> Unit) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = onRefresh) { Text("Atualizar") } }; if (items.isEmpty()) InfoCard("Nenhum bot registrado.") else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(items, key = { it.optString("slug") }) { bot -> ElevatedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(bot.optString("name"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); DetailRows(bot, setOf("_id", "name", "notes", "createdAt", "updatedAt")); TextButton(onClick = { onWorkflows(bot) }) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Workflows do projeto") } } } }; if (workflows.isNotEmpty()) { Text("Workflows de $repository", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); workflows.forEach { wf -> ElevatedCard { Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) { Text(wf.optString("name"), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold); IconButton(onClick = { onRun(wf) }) { Icon(Icons.Default.PlayArrow, "Executar") } } } } } } }
 
-@Composable private fun MongoModule(target: MongoTarget?, collections: List<JSONObject>, selected: String?, documents: List<JSONObject>, onDatabase: (MongoTarget) -> Unit, onCollection: (String) -> Unit, onCreateCollection: (String) -> Unit) {
-    if (target == null) {
-        Text("Selecione um banco de dados", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        mongoTargets.forEach { item ->
-            ElevatedCard(onClick = { onDatabase(item) }, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Storage, null)
-                    Spacer(Modifier.width(14.dp))
-                    Column { Text(item.label, fontWeight = FontWeight.SemiBold); Text(item.database, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
-                }
-            }
-        }
-    } else if (selected == null) {
-        var newCollection by remember(target.database) { mutableStateOf("") }
-        Text(target.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(target.database, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(value = newCollection, onValueChange = { newCollection = it }, label = { Text("Nova collection") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        Button(onClick = { if (newCollection.isNotBlank()) { onCreateCollection(newCollection.trim()); newCollection = "" } }, modifier = Modifier.fillMaxWidth()) { Text("Criar collection") }
-        if (collections.isEmpty()) InfoCard("Nenhuma collection foi encontrada neste banco de dados.")
-        else LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(collections, key = { it.optString("name") }) { collection ->
-                ElevatedCard(onClick = { onCollection(collection.optString("name")) }, modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.TableChart, null)
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(collection.optString("name"), fontWeight = FontWeight.SemiBold)
-                            Text("${collection.optLong("estimatedDocumentCount")} documentos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Icon(Icons.Default.ChevronRight, null)
-                    }
-                }
-            }
-        }
-    } else {
-        Text(selected, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        if (documents.isEmpty()) InfoCard("Nenhum documento foi encontrado nesta collection.")
-        else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(documents, key = { it.optString("_id", it.hashCode().toString()) }) { document ->
-                ElevatedCard { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { DetailRows(document) } }
-            }
-        }
-    }
-}
+@Composable private fun GithubModule(repository: String, workflows: List<JSONObject>, onRefresh: () -> Unit, onRun: (JSONObject) -> Unit) { Text(repository.ifBlank { "Repositório não configurado" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); TextButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(6.dp)); Text("Atualizar workflows") }; if (workflows.isEmpty()) InfoCard("Nenhum workflow foi retornado para o projeto configurado.") else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) { items(workflows, key = { it.optString("id") }) { wf -> ElevatedCard { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(wf.optString("name"), fontWeight = FontWeight.Bold); Text(wf.optString("path"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; IconButton(onClick = { onRun(wf) }) { Icon(Icons.Default.PlayArrow, "Executar workflow") } } } } } }
 
-@Composable private fun BotModule(workflows: List<JSONObject>, repository: String, onRefresh: () -> Unit, onRun: (JSONObject) -> Unit) {
-    Text("Tensura Moon", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-    if (repository.isNotBlank()) Text("Repositório vinculado: $repository", color = MaterialTheme.colorScheme.onSurfaceVariant)
-    TextButton(onClick = onRefresh) { Text("Atualizar workflows") }
-    if (workflows.isEmpty()) InfoCard("Nenhum workflow foi retornado para o repositório configurado do Tensura Moon.")
-    else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(workflows, key = { it.optString("id") }) { workflow ->
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(workflow.optString("name", "Workflow"), fontWeight = FontWeight.SemiBold)
-                    workflow.optString("path").takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    TextButton(onClick = { onRun(workflow) }) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Executar") }
-                }
-            }
-        }
-    }
-}
-
-@Composable private fun SitesModule(sites: List<JSONObject>, refresh: () -> Unit) {
-    TextButton(onClick = refresh) { Text("Atualizar") }
-    if (sites.isEmpty()) InfoCard("Nenhum site foi registrado.")
-    else LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items(sites, key = { it.optString("_id", it.optString("slug", it.optString("name"))) }) { site ->
-            ElevatedCard {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(site.optString("name", "Site"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    DetailRows(site, excluded = setOf("_id", "name"))
-                }
-            }
-        }
-    }
-}
-
-@Composable private fun ProfileModule(profile: JSONObject?, refresh: () -> Unit) {
-    TextButton(onClick = refresh) { Text("Atualizar informações") }
-    if (profile == null) InfoCard("Informações da conta indisponíveis.")
-    else ElevatedCard { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { DetailRows(profile) } }
-}
-
-@Composable private fun DetailRows(json: JSONObject, excluded: Set<String> = emptySet()) {
-    json.keys().asSequence().toList().filter { it !in excluded }.forEach { key ->
-        Field(pretty(key), humanValue(json.opt(key)))
-    }
-}
-
-private fun humanValue(value: Any?): String = when (value) {
-    null, JSONObject.NULL -> "Não informado"
-    is JSONObject -> value.keys().asSequence().toList().joinToString("\n") { key -> "${pretty(key)}: ${humanValue(value.opt(key))}" }
-    is JSONArray -> if (value.length() == 0) "Nenhum item" else (0 until value.length()).joinToString("\n") { index -> "• ${humanValue(value.opt(index))}" }
-    is Boolean -> if (value) "Sim" else "Não"
-    else -> value.toString()
-}
-
-@Composable private fun Field(label: String, value: String) {
-    Text(label, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelLarge)
-    Text(value.ifBlank { "Não informado" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
-}
-
+@Composable private fun DetailRows(json: JSONObject, excluded: Set<String> = emptySet()) { json.keys().asSequence().toList().filter { it !in excluded }.forEach { key -> val value = json.opt(key); if (value !is JSONObject && value !is JSONArray) { Text(pretty(key), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium); Text(humanValue(value), color = MaterialTheme.colorScheme.onSurfaceVariant) } else if (value is JSONArray && value.length() > 0) { Text(pretty(key), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium); (0 until value.length()).forEach { index -> Text("• ${humanValue(value.opt(index))}", color = MaterialTheme.colorScheme.onSurfaceVariant) } } else if (value is JSONObject) { Text(pretty(key), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium); value.keys().asSequence().toList().forEach { child -> Text("${pretty(child)}: ${humanValue(value.opt(child))}", color = MaterialTheme.colorScheme.onSurfaceVariant) } } } }
+private fun pretty(value: String): String = value.replace(Regex("([a-z])([A-Z])"), "$1 $2").replace('_', ' ').trim().replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+private fun humanValue(value: Any?): String = when(value) { null, JSONObject.NULL -> "Não informado"; is Boolean -> if (value) "Sim" else "Não"; else -> value.toString().replace("operational", "Operacional").replace("unknown", "Desconhecido").replace("active", "Ativo").replace("inactive", "Inativo") }
+private fun slug(value: String): String = value.lowercase().trim().replace(Regex("[^a-z0-9]+"), "-").trim('-').ifBlank { "recurso" }
 @Composable private fun InfoCard(text: String) { ElevatedCard(modifier = Modifier.fillMaxWidth()) { Text(text, Modifier.padding(18.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-@Composable private fun SimpleModule(title: String, description: String, actions: List<String>, onAction: () -> Unit) { ElevatedCard(modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); Text(description, color = MaterialTheme.colorScheme.onSurfaceVariant); actions.forEach { Button(onClick = onAction) { Text(it) } } } } }
-private fun pretty(value: String): String = value.replace(Regex("([a-z])([A-Z])"), "$1 $2").replace('_', ' ').replaceFirstChar { it.uppercase() }
+@Composable private fun ErrorCard(text: String, retry: () -> Unit) { ElevatedCard(modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.ErrorOutline, null); Spacer(Modifier.width(10.dp)); Text(text, Modifier.weight(1f)); TextButton(onClick = retry) { Text("Tentar novamente") } } } }
