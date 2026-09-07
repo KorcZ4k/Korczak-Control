@@ -35,8 +35,11 @@ const userSchema = new mongoose.Schema({
   managerAccountId: { type: String, trim: true, default: '', index: true },
   permissions: { type: permissionsSchema, default: () => ({}) },
   resourcePermissions: { type: [resourcePermissionsSchema], default: [] },
-  active: { type: Boolean, default: true },
-  lastLoginAt: { type: Date, default: null }
+  active: { type: Boolean, default: true, index: true },
+  lastLoginAt: { type: Date, default: null },
+  passwordChangedAt: { type: Date, default: null },
+  mustChangePassword: { type: Boolean, default: false },
+  photoUrl: { type: String, trim: true, default: '' }
 }, {
   timestamps: true,
   collection: process.env.ADMIN_COLLECTION_NAME || 'Users'
